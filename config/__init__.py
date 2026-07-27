@@ -1,0 +1,18 @@
+"""Config package — re-export settings for convenience."""
+from config.settings import (
+    PROJECT_ROOT, DATA_DIR, RAW_DIR, PROCESSED_DIR, LOGS_DIR,
+    RAW_STEAM_DIR, RAW_ITUNES_DIR, RAW_IGDB_DIR,
+    SQLITE_PATH, LOG_LEVEL, MAX_GAMES_PER_SOURCE,
+    STEAM_ENABLED, ITUNES_ENABLED, IGDB_ENABLED,
+    STEAM_API_KEY, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
+    validate_credentials, ensure_dirs,
+)
+
+__all__ = [
+    "PROJECT_ROOT", "DATA_DIR", "RAW_DIR", "PROCESSED_DIR", "LOGS_DIR",
+    "RAW_STEAM_DIR", "RAW_ITUNES_DIR", "RAW_IGDB_DIR",
+    "SQLITE_PATH", "LOG_LEVEL", "MAX_GAMES_PER_SOURCE",
+    "STEAM_ENABLED", "ITUNES_ENABLED", "IGDB_ENABLED",
+    "STEAM_API_KEY", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
+    "validate_credentials", "ensure_dirs",
+]

@@ -1,0 +1,29 @@
+# ============================================================
+# Sensor Tower Pipeline - Python Dependencies
+# Python 3.10+ required (tested on 3.14)
+# Install: pip install -r requirements.txt
+# ============================================================
+
+# ---- HTTP & API clients ----
+requests>=2.32,<3.0            # Đồng bộ HTTP client (Steam, iTunes, IGDB)
+
+# ---- Retry & resilience ----
+tenacity>=9.0,<10.0            # Exponential backoff cho rate-limited APIs
+
+# ---- Config & env ----
+python-dotenv>=1.0,<2.0        # Load .env
+PyYAML>=6.0,<7.0               # Đọc sources.yaml
+
+# ---- Data processing ----
+pandas>=2.2,<3.0               # Transform raw → dim/fact
+pyarrow>=18.0                  # Parquet/Arrow backend cho pandas (binary wheel, không cần build)
+
+# ---- Storage ----
+# sqlite3 là stdlib, không cần cài riêng
+
+# ---- Logging & CLI ----
+loguru>=0.7.2,<0.8             # Logging đẹp hơn stdlib
+click>=8.1,<9.0                # CLI commands (run_daily.py)
+
+# ---- Date/time ----
+python-dateutil>=2.9,<3.0      # Timezone, parsing
