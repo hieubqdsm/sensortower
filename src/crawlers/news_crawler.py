@@ -82,6 +82,40 @@ REDDIT_SUBREDDITS: list[str] = [
     "mobilegaming",    # mobile general
 ]
 
+# ---- AI News RSS feeds ----------------------------------------------------
+# Tin AI/ML industry — match JD "Game Publishing BI" cần hiểu AI trends
+# (AI-generated content, AI NPCs, AI tools cho game dev, GenAI platforms).
+# ToS: RSS feeds publish cho mục đích syndication — hợp pháp để consume.
+# URLs verify 2026-07-28.
+AI_RSS_FEEDS: list[dict[str, str]] = [
+    {
+        "name": "TechCrunch AI",
+        "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+        "tos": "https://techcrunch.com/terms-of-service/",
+    },
+    {
+        "name": "VentureBeat AI",
+        "url": "https://venturebeat.com/category/ai/feed/",
+        "tos": "https://venturebeat.com/terms-of-service/",
+    },
+    {
+        "name": "The Verge AI",
+        "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+        "tos": "https://www.voxmedia.com/legal/vox-media-terms-service",
+    },
+    {
+        "name": "MIT Tech Review AI",
+        "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
+        "tos": "https://www.technologyreview.com/terms/",
+    },
+    {
+        "name": "Ars Technica AI",
+        "url": "https://feeds.arstechnica.com/arstechnica/features",
+        "tos": "https://arstechnica.com/terms-of-service/",
+    },
+]
+
+
 # ---- Hacker News (Y Combinator) — JSON API public miễn phí --------------
 # ToS: cho phép, không cần auth, không có rate limit nghiêm ngặt
 # Filter stories có "game" trong title để lấy relevant
@@ -225,16 +259,25 @@ class NewsCrawler(BaseCrawler):
         ]
         for fmt in formats:
             try:
-                return datetime.strptime(date_str.strip(), fmt)
+                dt = datetime.strptime(date_str.strip(), fmt)
+                # Normalize: nếu naive (do format "GMT" không set tzinfo) → giả định UTC
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
             except ValueError:
                 continue
         return None
 
-    def fetch_rss_feed(self, feed: dict[str, str]) -> int:
-        """Fetch 1 RSS feed → insert news items trong cutoff range."""
+    def fetch_rss_feed(self, feed: dict[str, str], source_type: str = "rss") -> int:
+        """
+        Fetch 1 RSS feed → insert news items trong cutoff range.
+
+        source_type: "rss" (gaming) hoặc "ai_rss" (AI/ML news) — phân loại
+        trong dim_news_source để dashboard lọc riêng.
+        """
         name = feed["name"]
         url = feed["url"]
-        source_id = self._get_or_create_source("rss", name, feed_url=url,
+        source_id = self._get_or_create_source(source_type, name, feed_url=url,
                                                 tos_url=feed.get("tos"))
         try:
             # RSS trả XML, không phải JSON — gọi raw session
@@ -503,7 +546,7 @@ class NewsCrawler(BaseCrawler):
     # MAIN ENTRY
     # ====================================================================
     def run(self, max_items: int = 0) -> dict[str, int]:
-        """Chạy cả 3 nguồn. max_items không dùng (lấy tất cả trong range hours)."""
+        """Chạy cả 4 nguồn (RSS gaming + AI + Reddit + Steam News + Hacker News)."""
         logger.info(f"[news] starting crawl: hours={self.hours}")
         logger.info(f"[news] cutoff: {self.cutoff_dt.isoformat()}")
 
@@ -511,6 +554,12 @@ class NewsCrawler(BaseCrawler):
         for feed in RSS_FEEDS:
             rss_total += self.fetch_rss_feed(feed)
             time.sleep(1)  # polite delay giữa RSS sources
+
+        # AI News RSS (TechCrunch/VentureBeat/Verge AI/...)
+        ai_total = 0
+        for feed in AI_RSS_FEEDS:
+            ai_total += self.fetch_rss_feed(feed, source_type="ai_rss")
+            time.sleep(1)
 
         # Reddit: skip vì 403 (cần OAuth, chưa config)
         reddit_total = 0
@@ -539,12 +588,13 @@ class NewsCrawler(BaseCrawler):
             ).fetchone()[0]
 
         logger.success(
-            f"[news] DONE: rss={rss_total}, reddit={reddit_total}, "
+            f"[news] DONE: rss={rss_total}, ai={ai_total}, reddit={reddit_total}, "
             f"hackernews={hn_total}, steam={steam_total} | "
             f"total unique in DB (last {self.hours}h): {total}"
         )
         return {
             "rss_inserted": rss_total,
+            "ai_inserted": ai_total,
             "reddit_inserted": reddit_total,
             "hackernews_inserted": hn_total,
             "steam_inserted": steam_total,

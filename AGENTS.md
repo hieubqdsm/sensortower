@@ -87,8 +87,9 @@ python scripts/run_news.py --hours 48             # 2 ngày
 python scripts/run_news.py --source rss           # Chỉ RSS (Verge/IGN/Eurogamer/PCGamer/RPS)
 python scripts/run_news.py --source hackernews    # Chỉ Hacker News
 python scripts/run_news.py --source steam         # Chỉ Steam News (cần game Steam trong DB)
+python scripts/run_news.py --source ai            # Chỉ AI News (TechCrunch/VentureBeat/...)
 ```
-Nguồn: RSS (5 outlets) + Hacker News + Steam News. Reddit skip (cần OAuth từ 2023).
+Nguồn: RSS gaming (5 outlets) + **AI News (5 outlets)** + Hacker News + Steam News. Reddit skip (cần OAuth từ 2023).
 
 ### Daily tasks (sáng dậy chạy 1 lệnh)
 ```bash
@@ -148,7 +149,7 @@ with get_connection() as conn:
 | `src/crawlers/steam_crawler.py` | Steam Web API |
 | `src/crawlers/itunes_crawler.py` | iTunes Search + RSS (games-only) |
 | `src/crawlers/igdb_crawler.py` | IGDB (Twitch OAuth) |
-| `src/crawlers/news_crawler.py` | News: RSS + Hacker News + Steam News |
+| `src/crawlers/news_crawler.py` | News: RSS (gaming+AI) + Hacker News + Steam News |
 | `src/storage/db.py` | Schema DDL + connection helpers |
 | `src/transforms/build_models.py` | Post-crawl: extract dim_publisher |
 | `src/pipeline.py` | Orchestrator (cô lập failure từng source) |
@@ -226,7 +227,8 @@ Khi bạn mở Mac lên, có thể nói các kiểu:
 | "tiếp tục đi" | Đọc phần **Next steps**, hỏi user muốn làm cái nào |
 | "chạy pipeline" | `python scripts/run_daily.py` |
 | "chỉ chạy Steam thôi" | `python scripts/run_daily.py --source steam` |
-| "lấy tin" / "morning briefing" | `python scripts/run_news.py` rồi `python scripts/generate_report.py` |
+| "lấy tin" / "morning briefing" | `python scripts/run_news.py` (gaming+AI+HN) rồi `python scripts/generate_report.py` |
+| "lấy tin AI" | `python scripts/run_news.py --source ai` |
 | "check data" | `python scripts/data_quality.py` hoặc query DB trực tiếp |
 | "đánh giá game X" | Mở dashboard trang 💼 Deal Evaluation, hoặc viết script scorecard |
 | "làm Power BI" | Hướng dẫn theo `powerbi/data_sources.md` |

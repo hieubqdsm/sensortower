@@ -28,10 +28,10 @@ logger.add(sys.stderr, level=LOG_LEVEL)
 @click.command()
 @click.option("--hours", type=int, default=24,
               help="Số giờ lookback (default: 24)")
-@click.option("--source", type=click.Choice(["rss", "reddit", "steam", "hackernews"]),
+@click.option("--source", type=click.Choice(["rss", "ai", "reddit", "steam", "hackernews"]),
               default=None, help="Chỉ chạy 1 nguồn (mặc định: chạy hết)")
 def main(hours: int, source: str | None):
-    """Fetch game news từ RSS + Reddit + Steam News API + Hacker News."""
+    """Fetch game news từ RSS + AI + Reddit + Steam News API + Hacker News."""
     ensure_dirs()
     init_schema()
 
@@ -44,6 +44,10 @@ def main(hours: int, source: str | None):
         from src.crawlers.news_crawler import RSS_FEEDS
         n = sum(crawler.fetch_rss_feed(f) for f in RSS_FEEDS)
         logger.success(f"RSS done: {n} items")
+    elif source == "ai":
+        from src.crawlers.news_crawler import AI_RSS_FEEDS
+        n = sum(crawler.fetch_rss_feed(f, source_type="ai_rss") for f in AI_RSS_FEEDS)
+        logger.success(f"AI news done: {n} items")
     elif source == "reddit":
         from src.crawlers.news_crawler import REDDIT_SUBREDDITS
         n = sum(crawler.fetch_reddit_subreddit(s) for s in REDDIT_SUBREDDITS)
