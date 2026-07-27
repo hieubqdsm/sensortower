@@ -5,6 +5,8 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+> 🤖 **Mở project bằng AI agent (ZCode/Claude/Cursor)?** Đọc [`AGENTS.md`](AGENTS.md) trước — file đó chứa đầy đủ context để agent tự hiểu project và tiếp tục làm mà không cần giải thích lại.
+
 ## 🎯 Mục tiêu dự án
 
 Đây là project cá nhân mô phỏng công việc thực tế của vị trí **BI Analyst trong ngành mobile/PC game publishing**. Pipeline thu thập các loại dữ liệu:
