@@ -109,6 +109,39 @@ CREATE TABLE IF NOT EXISTS fact_engagement_metrics (
     FOREIGN KEY (game_id) REFERENCES dim_game(game_id)
 );
 CREATE INDEX IF NOT EXISTS idx_fact_engagement_date ON fact_engagement_metrics(snapshot_date);
+
+-- =========================================================
+-- NEWS (morning briefing — daily game news digest)
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS dim_news_source (
+    source_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type  TEXT NOT NULL,             -- 'rss' | 'reddit' | 'steam_news'
+    source_name  TEXT NOT NULL,             -- 'The Verge', 'r/games', 'Steam'
+    feed_url     TEXT,
+    tos_url      TEXT,
+    notes        TEXT,
+    UNIQUE(source_type, source_name)
+);
+
+CREATE TABLE IF NOT EXISTS fact_news (
+    news_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id    INTEGER NOT NULL,
+    game_id      INTEGER,                   -- FK nếu match được với dim_game (nullable)
+    title        TEXT NOT NULL,
+    url          TEXT NOT NULL UNIQUE,      -- dedup key: cùng URL không insert lại
+    summary      TEXT,
+    author       TEXT,
+    published_at TEXT NOT NULL,             -- ISO datetime từ source
+    score        INTEGER,                   -- Reddit upvotes, Steam upvotes (nullable cho RSS)
+    keywords     TEXT,                      -- comma-separated tags phát hiện được
+    fetched_at   TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (source_id) REFERENCES dim_news_source(source_id),
+    FOREIGN KEY (game_id) REFERENCES dim_game(game_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fact_news_published   ON fact_news(published_at);
+CREATE INDEX IF NOT EXISTS idx_fact_news_source      ON fact_news(source_id);
+CREATE INDEX IF NOT EXISTS idx_fact_news_game        ON fact_news(game_id);
 """
 
 
@@ -146,6 +179,7 @@ def get_table_rowcounts(db_path: Path | None = None) -> dict[str, int]:
     """Trả về số dòng mỗi table — dùng cho health check."""
     tables = [
         "dim_game", "dim_date", "dim_publisher",
+        "dim_news_source", "fact_news",
         "fact_steam_playercounts", "fact_itunes_rankings", "fact_engagement_metrics",
     ]
     out: dict[str, int] = {}

@@ -130,6 +130,41 @@ Cho phép lưu bất kỳ metric nào từ Reddit, YouTube, reviews sentiment...
 
 ---
 
+## NEWS TABLES (morning briefing)
+
+### `dim_news_source` — News sources master
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `source_id` | INTEGER PK | Auto |
+| `source_type` | TEXT | `'rss'`, `'reddit'`, `'hackernews'`, `'steam_news'` |
+| `source_name` | TEXT | `"The Verge"`, `"r/games"`, `"Hacker News"` |
+| `feed_url` | TEXT | URL gốc |
+| `tos_url` | TEXT | Link ToS (audit) |
+| `notes` | TEXT | Ghi chú |
+
+**Constraints:** `UNIQUE(source_type, source_name)`.
+
+### `fact_news` — News items (dedup by URL)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `news_id` | INTEGER PK | Auto |
+| `source_id` | INTEGER FK | → `dim_news_source.source_id` |
+| `game_id` | INTEGER FK | → `dim_game.game_id` (nullable — auto-match nếu tìm được) |
+| `title` | TEXT | Tiêu đề |
+| `url` | TEXT UNIQUE | **Dedup key** — cùng URL không insert lại |
+| `summary` | TEXT | Tóm tắt (first 500 chars) |
+| `author` | TEXT | Tác giả |
+| `published_at` | TEXT | ISO datetime từ source |
+| `score` | INTEGER | Reddit upvotes / HN score (null cho RSS) |
+| `keywords` | TEXT | Tags auto-detected: `launch`, `update`, `layoffs`, `acquisition`, ... |
+| `fetched_at` | TEXT | Timestamp crawl |
+
+**Constraints:** `UNIQUE(url)` — idempotent, re-run không duplicate.
+
+---
+
 ## Business Metrics (computed trong Power BI/DAX)
 
 Đây là các KPI mà JD yêu cầu — sẽ compute trong Power BI measures:

@@ -20,6 +20,9 @@ data/*.db-shm
 # Manual Sensor Tower snapshots (lớn, có thể nhạy cảm)
 data/manual/
 
+# Generated daily reports (regenerate anytime)
+reports/
+
 # Power BI cache files
 *.pbix.tmp
 powerbi/.cache/

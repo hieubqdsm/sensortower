@@ -36,6 +36,37 @@
 - **Cách dùng:** Game catalog enrichment (genres, platforms, screenshots)
 - **Cập nhật:** 2026-07-27
 
+### RSS feeds (Gaming news outlets)
+- **Endpoints:** The Verge, IGN, Eurogamer, PCGamer, Rock Paper Shotgun
+- **ToS:** RSS được publish cho mục đích syndication — consume hợp pháp
+- **Auth:** Không cần
+- **Rate limit:** Tự throttle 1s/request (polite)
+- **Cách dùng:** Morning news briefing, filter theo 24h
+- **Cập nhật:** 2026-07-27
+
+### Hacker News (Firebase API)
+- **Endpoint:** `https://hacker-news.firebaseio.com/v0`
+- **ToS:** https://news.ycombinator.com/tos (public API, no auth)
+- **Auth:** Không cần
+- **Rate limit:** Không nghiêm ngặt
+- **Cách dùng:** Industry news (funding, layoff, M&A) — filter keyword game-related
+- **Cập nhật:** 2026-07-27
+
+### Steam News API
+- **Endpoint:** `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/`
+- **ToS:** https://steamcommunity.com/dev/apiterms
+- **Auth:** Steam API key (cùng key với Steam crawler)
+- **Cách dùng:** Patch notes, DLC announcements cho game Steam đang track
+- **Cập nhật:** 2026-07-27
+
+### Reddit (HIỆN TẠI SKIP)
+- **Endpoint:** `https://www.reddit.com/r/<sub>/top.json`
+- **Trạng thái:** **403 Blocked** — Reddit đã chặn unauthenticated JSON từ 2023
+- **Cách bật lại:** Cần đăng ký Reddit app (free) → OAuth2 client_credentials
+  → set `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` trong `.env`
+- **Quyết định:** Skip trong MVP. Code sẵn trong `news_crawler.py` để enable sau.
+- **Cập nhật:** 2026-07-27
+
 ---
 
 ## ⚠️ Tier 2 — Grey zone (chưa dùng, có thể thêm sau)

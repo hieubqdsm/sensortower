@@ -66,16 +66,23 @@ python scripts/init_db.py
 python scripts/run_daily.py
 ```
 
-### 5. Xem data đã crawl (Streamlit inspector)
+### 5. Crawl news (morning briefing)
+
+```bash
+python scripts/run_news.py                    # 24h gần nhất (RSS + HN + Steam News)
+python scripts/run_news.py --hours 6          # 6h gần nhất
+```
+
+### 6. Xem data đã crawl (Streamlit inspector)
 
 ```bash
 streamlit run dashboard/app.py
 # → mở http://localhost:8501
 ```
 
-4 trang dashboard: Portfolio Overview · Rankings & Trends · Genre & Publisher · Game Detail
+5 trang dashboard: Portfolio Overview · **Daily News** · Rankings & Trends · Genre & Publisher · Game Detail
 
-### 6. Mở Power BI
+### 7. Mở Power BI
 
 1. Mở `powerbi/sensortower.pbix` bằng Power BI Desktop
 2. Connection details: [`powerbi/data_sources.md`](powerbi/data_sources.md)

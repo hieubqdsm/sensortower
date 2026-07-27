@@ -59,6 +59,25 @@ def load_dim_publisher() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60)
+def load_fact_news(hours: int = 24) -> pd.DataFrame:
+    """Load news items trong N giờ gần nhất."""
+    with get_connection() as conn:
+        return pd.read_sql(
+            """
+            SELECT n.*, s.source_type, s.source_name,
+                   g.name as game_name
+            FROM fact_news n
+            JOIN dim_news_source s ON n.source_id = s.source_id
+            LEFT JOIN dim_game g ON n.game_id = g.game_id
+            WHERE n.published_at >= datetime('now', ?)
+            ORDER BY n.published_at DESC
+            """,
+            conn,
+            params=(f"-{hours} hours",),
+        )
+
+
+@st.cache_data(ttl=60)
 def load_table_rowcounts() -> dict[str, int]:
     from src.storage.db import get_table_rowcounts
     return get_table_rowcounts()
@@ -88,9 +107,12 @@ for t, n in counts.items():
 # ---- Page routing via radio (đơn giản, không cần multipage app) ---------
 PAGES = [
     "📊 Portfolio Overview",
+    "📰 Daily News",
     "🏆 Rankings & Trends",
     "🎭 Genre & Publisher",
+    "📈 Genre Trends",
     "🔍 Game Detail",
+    "💼 Deal Evaluation",
 ]
 page = st.sidebar.radio("Navigate", PAGES, label_visibility="collapsed")
 st.sidebar.divider()
@@ -164,9 +186,135 @@ if page == PAGES[0]:
 
 
 # =========================================================================
-# PAGE 2: RANKINGS & TRENDS
+# PAGE 2: DAILY NEWS (morning briefing)
 # =========================================================================
 elif page == PAGES[1]:
+    st.title("📰 Daily News")
+    st.caption("Morning game news briefing — RSS + Hacker News + Steam News")
+
+    # Hours selector
+    col_h1, col_h2 = st.columns([1, 3])
+    with col_h1:
+        hours = st.selectbox("Lookback", [6, 12, 24, 48, 72], index=2)
+
+    news = load_fact_news(hours)
+
+    if news.empty:
+        st.warning(
+            f"❌ Chưa có news trong {hours}h qua. "
+            f"Chạy: `python scripts/run_news.py --hours {hours}` rồi refresh."
+        )
+        st.stop()
+
+    # KPI cards
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(f"News (last {hours}h)", len(news))
+    col2.metric("Sources", news["source_name"].nunique())
+    col3.metric("Matched games", news["game_id"].notna().sum())
+    col4.metric("With keywords", news["keywords"].notna().sum() - (news["keywords"] == "").sum())
+
+    st.divider()
+
+    # Filters
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        sources = ["All"] + sorted(news["source_name"].unique())
+        sel_source = st.selectbox("Filter by source", sources)
+    with col_f2:
+        # Parse keywords thành list unique
+        all_keywords = set()
+        for kws in news["keywords"].dropna():
+            if kws:
+                all_keywords.update(kws.split(","))
+        kw_options = ["All"] + sorted(all_keywords)
+        sel_keyword = st.selectbox("Filter by keyword", kw_options)
+    with col_f3:
+        search = st.text_input("🔍 Search title", "")
+
+    # Apply filters
+    filtered = news.copy()
+    if sel_source != "All":
+        filtered = filtered[filtered["source_name"] == sel_source]
+    if sel_keyword != "All":
+        filtered = filtered[filtered["keywords"].str.contains(sel_keyword, na=False)]
+    if search:
+        filtered = filtered[filtered["title"].str.contains(search, case=False, na=False)]
+
+    st.write(f"**Showing {len(filtered)} of {len(news)} news items**")
+
+    # Display news as cards (cherry-picked style, không phải raw table)
+    import plotly.express as px
+
+    # Keyword distribution chart
+    st.subheader("🏷️ News by keyword")
+    kw_series = (
+        news["keywords"].dropna()
+        .str.split(",")
+        .explode()
+        .value_counts()
+        .head(10)
+        .reset_index()
+    )
+    kw_series.columns = ["Keyword", "Count"]
+    if not kw_series.empty:
+        fig = px.bar(kw_series, x="Count", y="Keyword", orientation="h",
+                     title=f"Top keywords (last {hours}h)")
+        fig.update_layout(yaxis={"categoryorder": "total ascending"}, height=350)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No keywords detected.")
+
+    # News by source breakdown
+    st.divider()
+    col_s1, col_s2 = st.columns([2, 3])
+    with col_s1:
+        st.subheader("📡 By source")
+        src_counts = news["source_name"].value_counts().reset_index()
+        src_counts.columns = ["Source", "Count"]
+        st.dataframe(src_counts, use_container_width=True, hide_index=True)
+
+    with col_s2:
+        st.subheader("📅 Timeline")
+        news_dt = news.copy()
+        news_dt["hour"] = pd.to_datetime(news_dt["published_at"]).dt.floor("H")
+        timeline = news_dt.groupby("hour").size().reset_index(name="count")
+        if not timeline.empty:
+            fig = px.bar(timeline, x="hour", y="count",
+                         title=f"News per hour (last {hours}h)")
+            fig.update_layout(height=300, xaxis_title="", yaxis_title="items")
+            st.plotly_chart(fig, use_container_width=True)
+
+    # News list (cherry-picked display)
+    st.divider()
+    st.subheader(f"📋 News feed ({len(filtered)} items)")
+
+    # Sort by date (newest first) then by score
+    display_cols = ["published_at", "source_name", "title", "keywords", "score", "url"]
+    display_df = filtered[display_cols].copy() if not filtered.empty else filtered
+    display_df["published_at"] = pd.to_datetime(display_df["published_at"]).dt.strftime("%H:%M")
+
+    # Render as clickable links
+    for _, row in display_df.head(50).iterrows():
+        title = row["title"]
+        url = row["url"]
+        src = row["source_name"]
+        time_str = row["published_at"]
+        kw = row["keywords"]
+        score = row["score"]
+
+        kw_html = f" `<span style='color:#888'>[{kw}]</span>`" if kw else ""
+        score_html = f" ⬆{score}" if pd.notna(score) and score else ""
+
+        st.markdown(
+            f"**[{time_str}]** `[{src}]` [{title}]({url}){kw_html}{score_html}",
+            unsafe_allow_html=True,
+        )
+
+
+# =========================================================================
+# PAGE 3: RANKINGS & TRENDS
+# =========================================================================
+elif page == PAGES[2]:
     st.title("🏆 Rankings & Trends")
     st.caption("iTunes top chart rankings theo country & chart type")
 
@@ -241,9 +389,9 @@ elif page == PAGES[1]:
 
 
 # =========================================================================
-# PAGE 3: GENRE & PUBLISHER
+# PAGE 4: GENRE & PUBLISHER
 # =========================================================================
-elif page == PAGES[2]:
+elif page == PAGES[3]:
     st.title("🎭 Genre & Publisher Analysis")
     st.caption("Phân tích market share theo thể loại và publisher")
 
@@ -308,9 +456,9 @@ elif page == PAGES[2]:
 
 
 # =========================================================================
-# PAGE 4: GAME DETAIL
+# PAGE 5: GAME DETAIL
 # =========================================================================
-elif page == PAGES[3]:
+elif page == PAGES[4]:
     st.title("🔍 Game Detail")
     st.caption("Deep dive vào 1 game cụ thể")
 
@@ -390,6 +538,264 @@ elif page == PAGES[3]:
                 st.json(json.loads(raw_path.read_text(encoding="utf-8")))
         else:
             st.warning(f"Raw file không tồn tại: {raw_path}")
+
+
+# =========================================================================
+# PAGE 6: GENRE TRENDS (emerging / declining genres)
+# =========================================================================
+elif page == PAGES[5]:
+    st.title("📈 Genre Trends")
+    st.caption("Emerging vs declining genres — recommend deal sourcing direction")
+
+    games = load_dim_game()
+    rankings = load_fact_rankings()
+    steam = load_fact_steam()
+
+    if games.empty:
+        st.warning("No data yet.")
+        st.stop()
+
+    import plotly.express as px
+
+    # ---- Section 1: Current genre distribution --------------------------
+    st.subheader("🎯 Current genre distribution")
+    genre_counts = (
+        games["genre"].fillna("(unknown)").value_counts().reset_index()
+    )
+    genre_counts.columns = ["Genre", "Count"]
+    fig = px.pie(
+        genre_counts.head(10), values="Count", names="Genre",
+        title=f"Distribution of {len(games)} tracked games by genre",
+    )
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ---- Section 2: Genre momentum (Steam CCU proxy) -------------------
+    st.divider()
+    st.subheader("🚀 Genre momentum (Steam CCU proxy)")
+    if not steam.empty:
+        steam_with_genre = steam.merge(
+            games[["game_id", "genre", "name"]], on="game_id", how="left"
+        )
+        genre_momentum = (
+            steam_with_genre.groupby("genre")
+            .agg(
+                games=("game_id", "nunique"),
+                total_peak_ccu=("peak_ccu", "sum"),
+                avg_peak_ccu=("peak_ccu", "mean"),
+            )
+            .reset_index()
+            .sort_values("total_peak_ccu", ascending=False)
+        )
+        st.dataframe(genre_momentum, use_container_width=True, hide_index=True)
+
+        fig = px.bar(
+            genre_momentum.head(15), x="total_peak_ccu", y="genre", orientation="h",
+            title="Total peak CCU by genre (Steam)",
+        )
+        fig.update_layout(yaxis={"categoryorder": "total ascending"}, height=450)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Steam data chưa có (chạy `--source steam`). Hiện không tính được momentum.")
+
+    # ---- Section 3: Genre by source (cross-platform) -------------------
+    st.divider()
+    st.subheader("🔀 Cross-platform genre comparison")
+    cross = (
+        games.groupby(["genre", "source"])
+        .size()
+        .reset_index(name="count")
+        .pivot(index="genre", columns="source", values="count")
+        .fillna(0)
+        .astype(int)
+    )
+    cross["total"] = cross.sum(axis=1)
+    cross = cross.sort_values("total", ascending=False).head(15)
+    st.dataframe(cross, use_container_width=True)
+
+    # ---- Section 4: iTunes ranking movement (genre-level) --------------
+    st.divider()
+    st.subheader("🏆 iTunes ranking presence by genre")
+    if not rankings.empty:
+        rank_genre = rankings.merge(
+            games[["game_id", "genre"]], on="game_id", how="left"
+        )
+        genre_rank = (
+            rank_genre.groupby("genre")
+            .agg(
+                top10_appearances=("rank", lambda x: (x <= 10).sum()),
+                avg_rank=("rank", "mean"),
+                total_appearances=("rank", "count"),
+            )
+            .reset_index()
+            .sort_values("top10_appearances", ascending=False)
+        )
+        st.dataframe(genre_rank, use_container_width=True, hide_index=True)
+    else:
+        st.info("Chưa có iTunes ranking data.")
+
+    # ---- Section 5: Emerging genres (insight heuristic) ---------------
+    st.divider()
+    st.subheader("💡 Emerging genre signals")
+    st.caption("Heuristic: genres có >3 games + publisher đa dạng (không độc quyền)")
+    emerging = (
+        games.groupby("genre")
+        .agg(
+            games=("game_id", "count"),
+            publishers=("publisher_name", "nunique"),
+        )
+        .reset_index()
+    )
+    emerging["competition_ratio"] = emerging["publishers"] / emerging["games"]
+    # Genre "healthy" = nhiều games + nhiều publishers (không bị 1 pub độc quyền)
+    healthy = emerging[(emerging["games"] >= 2) & (emerging["publishers"] >= 2)]
+    if not healthy.empty:
+        st.write("**Genres có competition lành mạnh (đáng sourcing):**")
+        st.dataframe(
+            healthy.sort_values("games", ascending=False),
+            use_container_width=True, hide_index=True
+        )
+    else:
+        st.info("Cần thêm data để detect emerging genres (hiện chỉ có 1 genre dominant).")
+
+
+# =========================================================================
+# PAGE 7: DEAL EVALUATION (game scorecard + ROAS calculator)
+# =========================================================================
+elif page == PAGES[6]:
+    st.title("💼 Deal Evaluation")
+    st.caption("Scorecard + ROAS calculator cho game publishing deals")
+
+    st.divider()
+    st.subheader("📊 Deal Scorecard")
+    st.caption("Nhập thông tin game submission → đánh giá PURSUE/WATCH/PASS")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        game_name = st.text_input("Game name", value="", placeholder="vd: Pixel Dungeon 3")
+        genre = st.selectbox(
+            "Genre",
+            ["Action", "RPG", "Strategy", "Casual", "Puzzle", "Simulation",
+             "Racing", "Sports", "Adventure", "MMO", "Other"]
+        )
+        platform = st.selectbox("Platform", ["Mobile (iOS)", "Mobile (Android)",
+                                              "PC (Steam)", "Cross-platform"])
+        monetization = st.selectbox(
+            "Monetization model",
+            ["F2P + IAP", "F2P + Ads", "F2P + Hybrid", "Premium (paid)",
+             "Subscription", "Paid + DLC"]
+        )
+
+    with col2:
+        deal_cost = st.number_input("Deal cost (USD)", min_value=0, value=50000, step=5000)
+        target_cpi = st.number_input("Target CPI (USD)", min_value=0.0, value=0.50, step=0.05)
+        est_ltv = st.number_input("Estimated LTV (USD)", min_value=0.0, value=0.80, step=0.05)
+        target_d30_retention = st.slider("Target D30 retention %", 0, 50, 15)
+        review_score = st.slider("Current review score (0-100)", 0, 100, 75)
+
+    # ---- Compute scores -------------------------------------------------
+    st.divider()
+    st.subheader("🎯 Scorecard Result")
+
+    # Simple scoring logic (heuristic, can be refined)
+    scores = {}
+
+    # Market fit (genre popularity in current DB)
+    with get_connection() as conn:
+        genre_count = conn.execute(
+            "SELECT COUNT(*) FROM dim_game WHERE genre LIKE ?", (f"%{genre}%",)
+        ).fetchone()[0]
+    # Benchmark: nếu genre có nhiều game tracked → market có demand
+    market_fit_score = min(10, 5 + genre_count // 3)
+    scores["Market Fit"] = market_fit_score
+
+    # Monetization potential
+    mono_scores = {"F2P + Hybrid": 9, "F2P + IAP": 8, "Subscription": 7,
+                   "Paid + DLC": 6, "F2P + Ads": 5, "Premium (paid)": 4}
+    scores["Monetization"] = mono_scores.get(monetization, 5)
+
+    # ROI / ROAS
+    if est_ltv > 0 and target_cpi > 0:
+        roas = est_ltv / target_cpi
+        # ROAS > 1.5 = good, > 2.0 = great
+        roi_score = min(10, int(roas * 4))
+    else:
+        roas = 0
+        roi_score = 0
+    scores["ROI / ROAS"] = roi_score
+
+    # Retention potential
+    scores["Retention"] = min(10, target_d30_retention // 5)
+
+    # Quality signal (reviews)
+    scores["Quality (reviews)"] = review_score // 10
+
+    # Scalability (platform)
+    scale_scores = {"Cross-platform": 10, "Mobile (iOS)": 7, "Mobile (Android)": 7,
+                    "PC (Steam)": 6}
+    scores["Scalability"] = scale_scores.get(platform, 5)
+
+    # Display scores as table
+    score_df = pd.DataFrame([
+        {"Dimension": dim, "Score": f"{sc}/10", "Raw": sc}
+        for dim, sc in scores.items()
+    ])
+    total_score = sum(scores.values())
+    max_score = len(scores) * 10
+    pct = total_score / max_score * 100
+
+    col_s1, col_s2, col_s3 = st.columns(3)
+    col_s1.metric("Total Score", f"{total_score}/{max_score}")
+    col_s2.metric("Percentage", f"{pct:.0f}%")
+    # Recommendation
+    if pct >= 75:
+        rec, rec_color = "🟢 PURSUE", "green"
+    elif pct >= 50:
+        rec, rec_color = "🟡 WATCH", "orange"
+    else:
+        rec, rec_color = "🔴 PASS", "red"
+    col_s3.markdown(
+        f"<h3 style='color:{rec_color}; margin:0;'>{rec}</h3>",
+        unsafe_allow_html=True,
+    )
+
+    # Bar chart of scores
+    fig = px.bar(
+        score_df, x="Raw", y="Dimension", orientation="h",
+        range_x=[0, 10], title="Score by dimension",
+        color="Raw",
+        color_continuous_scale=["red", "yellow", "green"],
+    )
+    fig.update_layout(yaxis={"categoryorder": "total ascending"}, height=350)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ---- ROAS projection ----------------------------------------------
+    st.divider()
+    st.subheader("💰 ROAS Projection")
+    if roas > 0:
+        # Payback period (số user cần acquire để cover deal cost)
+        users_needed = int(deal_cost / max(est_ltv - target_cpi, 0.01))
+        # Simple projection: assume X users/month
+        col_r1, col_r2, col_r3 = st.columns(3)
+        col_r1.metric("ROAS ratio (LTV/CPI)", f"{roas:.2f}x",
+                      delta="✅ profitable" if roas > 1 else "❌ loss")
+        col_r2.metric("Users needed to break even", f"{users_needed:,}")
+        col_r3.metric("Margin per user", f"${est_ltv - target_cpi:.2f}")
+
+        # Sensitivity: vary CPI
+        st.write("**Sensitivity analysis (varying CPI):**")
+        cpi_range = [target_cpi * f for f in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]]
+        sens_data = []
+        for cpi in cpi_range:
+            roas_sens = est_ltv / cpi if cpi > 0 else 0
+            sens_data.append({
+                "CPI": f"${cpi:.2f}",
+                "ROAS": f"{roas_sens:.2f}x",
+                "Profitable": "✅" if roas_sens > 1 else "❌",
+            })
+        st.dataframe(pd.DataFrame(sens_data), use_container_width=True, hide_index=True)
+    else:
+        st.warning("Cần nhập LTV và CPI để tính ROAS.")
 
 
 # ---- Footer --------------------------------------------------------------

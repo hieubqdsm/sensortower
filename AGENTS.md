@@ -79,6 +79,28 @@ python scripts/run_daily.py --dry-run             # Check credentials, không cr
 python scripts/run_daily.py --skip-init           # Bỏ qua init schema
 ```
 
+### Chạy news crawler (morning briefing)
+```bash
+python scripts/run_news.py                        # 24h mặc định
+python scripts/run_news.py --hours 6              # 6h gần nhất
+python scripts/run_news.py --hours 48             # 2 ngày
+python scripts/run_news.py --source rss           # Chỉ RSS (Verge/IGN/Eurogamer/PCGamer/RPS)
+python scripts/run_news.py --source hackernews    # Chỉ Hacker News
+python scripts/run_news.py --source steam         # Chỉ Steam News (cần game Steam trong DB)
+```
+Nguồn: RSS (5 outlets) + Hacker News + Steam News. Reddit skip (cần OAuth từ 2023).
+
+### Daily tasks (sáng dậy chạy 1 lệnh)
+```bash
+# 1. Generate daily briefing markdown
+python scripts/generate_report.py                 # → reports/<date>-briefing.md
+
+# 2. Check data quality
+python scripts/data_quality.py                    # alerts ra terminal
+python scripts/data_quality.py --json             # output JSON (cho monitoring)
+python scripts/data_quality.py --strict           # exit 1 nếu có warning
+```
+
 ### Chạy dashboard inspector (xem data đã crawl)
 ```bash
 streamlit run dashboard/app.py
@@ -86,6 +108,15 @@ streamlit run dashboard/app.py
 ```
 Dashboard này KHÔNG phải Power BI — chỉ để inspect/verify data sau khi crawl.
 Power BI dashboard user sẽ tự build (xem `powerbi/data_sources.md`).
+
+7 trang:
+- 📊 Portfolio Overview — KPIs + crawl activity
+- 📰 Daily News — morning briefing with filters
+- 🏆 Rankings & Trends — iTunes rankings + trajectory
+- 🎭 Genre & Publisher — market share analysis
+- 📈 Genre Trends — emerging genres + momentum
+- 🔍 Game Detail — deep dive 1 game + raw payload
+- 💼 Deal Evaluation — scorecard + ROAS calculator
 
 ### Init database
 ```bash
@@ -117,10 +148,14 @@ with get_connection() as conn:
 | `src/crawlers/steam_crawler.py` | Steam Web API |
 | `src/crawlers/itunes_crawler.py` | iTunes Search + RSS (games-only) |
 | `src/crawlers/igdb_crawler.py` | IGDB (Twitch OAuth) |
+| `src/crawlers/news_crawler.py` | News: RSS + Hacker News + Steam News |
 | `src/storage/db.py` | Schema DDL + connection helpers |
 | `src/transforms/build_models.py` | Post-crawl: extract dim_publisher |
 | `src/pipeline.py` | Orchestrator (cô lập failure từng source) |
-| `scripts/run_daily.py` | CLI entry point |
+| `scripts/run_daily.py` | CLI entry point (games pipeline) |
+| `scripts/run_news.py` | CLI entry point (news briefing) |
+| `scripts/generate_report.py` | Daily briefing markdown generator |
+| `scripts/data_quality.py` | Data quality alerts (freshness/anomaly/integrity) |
 | `scripts/init_db.py` | Tạo schema + populate dim_date |
 | `scripts/manual/` | Slot cho Sensor Tower data save-tay (xem README) |
 | `dashboard/app.py` | Streamlit inspector — xem data đã crawl (4 pages) |
@@ -191,7 +226,9 @@ Khi bạn mở Mac lên, có thể nói các kiểu:
 | "tiếp tục đi" | Đọc phần **Next steps**, hỏi user muốn làm cái nào |
 | "chạy pipeline" | `python scripts/run_daily.py` |
 | "chỉ chạy Steam thôi" | `python scripts/run_daily.py --source steam` |
-| "check data" | Query DB, show row counts + sample |
+| "lấy tin" / "morning briefing" | `python scripts/run_news.py` rồi `python scripts/generate_report.py` |
+| "check data" | `python scripts/data_quality.py` hoặc query DB trực tiếp |
+| "đánh giá game X" | Mở dashboard trang 💼 Deal Evaluation, hoặc viết script scorecard |
 | "làm Power BI" | Hướng dẫn theo `powerbi/data_sources.md` |
 | "thêm nguồn X" | Check ToS trước (`docs/tos_compliance.md`), rồi code |
 | "craw Sensor Tower" | ⚠️ DỪNG. Giải thích ToS/ethics trước. Đề xuất `scripts/manual/` |

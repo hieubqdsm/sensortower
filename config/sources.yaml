@@ -45,3 +45,17 @@ igdb:
   notes: >
     Cần Twitch app (Client ID + Secret). Lấy access token qua OAuth2
     client_credentials flow (token hết hạn sau ~60 ngày, refresh được).
+
+news:
+  name: "Game News (RSS + Reddit + Steam News)"
+  # RSS: hợp pháp (publish cho syndication). Reddit JSON: public read OK.
+  # Steam News: public API.
+  rate_limit_ms: 1000
+  max_retries: 3
+  backoff_seconds: 3
+  needs_auth: false
+  tos_url: "https://www.redditinc.com/policies/data-api-terms"
+  notes: >
+    RSS feeds (Verge/Polygon/IGN/Eurogamer/TouchArcade/RPS) — publish cho syndication.
+    Reddit: JSON endpoint public, không cần OAuth với rate limit nhẹ.
+    Steam News API: cần STEAM_API_KEY (same as Steam crawler).
