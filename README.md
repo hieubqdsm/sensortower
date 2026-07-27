@@ -66,7 +66,16 @@ python scripts/init_db.py
 python scripts/run_daily.py
 ```
 
-### 5. Mở Power BI
+### 5. Xem data đã crawl (Streamlit inspector)
+
+```bash
+streamlit run dashboard/app.py
+# → mở http://localhost:8501
+```
+
+4 trang dashboard: Portfolio Overview · Rankings & Trends · Genre & Publisher · Game Detail
+
+### 6. Mở Power BI
 
 1. Mở `powerbi/sensortower.pbix` bằng Power BI Desktop
 2. Connection details: [`powerbi/data_sources.md`](powerbi/data_sources.md)

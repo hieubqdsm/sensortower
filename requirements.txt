@@ -27,3 +27,7 @@ click>=8.1,<9.0                # CLI commands (run_daily.py)
 
 # ---- Date/time ----
 python-dateutil>=2.9,<3.0      # Timezone, parsing
+
+# ---- Dashboard (data preview / inspection) ----
+streamlit>=1.40,<2.0           # Local web dashboard để inspect crawled data
+plotly>=5.24,<6.0              # Interactive charts cho streamlit

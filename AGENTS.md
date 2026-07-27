@@ -79,6 +79,14 @@ python scripts/run_daily.py --dry-run             # Check credentials, không cr
 python scripts/run_daily.py --skip-init           # Bỏ qua init schema
 ```
 
+### Chạy dashboard inspector (xem data đã crawl)
+```bash
+streamlit run dashboard/app.py
+# → mở http://localhost:8501
+```
+Dashboard này KHÔNG phải Power BI — chỉ để inspect/verify data sau khi crawl.
+Power BI dashboard user sẽ tự build (xem `powerbi/data_sources.md`).
+
 ### Init database
 ```bash
 python scripts/init_db.py                         # Tạo schema + dim_date (idempotent)
@@ -115,6 +123,7 @@ with get_connection() as conn:
 | `scripts/run_daily.py` | CLI entry point |
 | `scripts/init_db.py` | Tạo schema + populate dim_date |
 | `scripts/manual/` | Slot cho Sensor Tower data save-tay (xem README) |
+| `dashboard/app.py` | Streamlit inspector — xem data đã crawl (4 pages) |
 | `powerbi/data_sources.md` | Hướng dẫn connect Power BI |
 
 ---
