@@ -59,6 +59,7 @@ Nếu `.env` chưa có key thật, **hỏi user** để họ tự đăng ký:
 | `STEAM_API_KEY` | https://steamcommunity.com/dev/apikey | Login Steam account → có key ngay |
 | `TWITCH_CLIENT_ID` | https://dev.twitch.tv/console | Tạo app → copy Client ID |
 | `TWITCH_CLIENT_SECRET` | (cùng chỗ Twitch) | Copy Client Secret |
+| `TWITCH_CLIENT_SECRET` | (cùng chỗ Twitch) | Copy Client Secret |
 | iTunes | KHÔNG cần key | Free public API |
 
 **Quy tắc:** Agent KHÔNG tự đăng ký giúp (cần account cá nhân của user).
@@ -91,6 +92,21 @@ python scripts/run_news.py --source ai            # Chỉ AI News (TechCrunch/Ve
 ```
 Nguồn: RSS gaming (5 outlets) + **AI News (5 outlets)** + Hacker News + Steam News. Reddit skip (cần OAuth từ 2023).
 
+### Gacha revenue (top 50 hàng tháng — HTML parser)
+```bash
+# Workflow mỗi tháng 1 lần (pipeline thay đổi, tôi tự input):
+# 1. Mở revenue report page (vd: revenue.ennead.cc/revenue)
+# 2. Copy HTML table (View Source / Inspect → copy <table>...)
+# 3. Save: data/manual/gacha_2026-06.html
+# 4. Parse + load DB:
+python scripts/manual/parse_gacha_html.py data/manual/gacha_2026-06.html
+# Hoặc pipe:
+cat table.html | python scripts/manual/parse_gacha_html.py
+```
+Parser tự extract: rank, game name, scope (combined/global/cn), prev + current month revenue.
+Idempotent — re-parse không duplicate. Fallback CSV: `scripts/manual/load_gacha_revenue.py`.
+Data gốc: Sensor Tower mobile estimates (PC/console excluded).
+
 ### Daily tasks (sáng dậy chạy 1 lệnh)
 ```bash
 # 1. Generate daily briefing markdown
@@ -101,6 +117,23 @@ python scripts/data_quality.py                    # alerts ra terminal
 python scripts/data_quality.py --json             # output JSON (cho monitoring)
 python scripts/data_quality.py --strict           # exit 1 nếu có warning
 ```
+
+### Serve API (cho Power BI / cloudflare tunnel)
+```bash
+python scripts/serve_api.py                    # localhost:8000 (Power BI cùng máy)
+python scripts/serve_api.py --host 0.0.0.0     # LAN accessible
+# cloudflared tunnel --url http://localhost:8000   # expose ra internet
+```
+API serve JSON/CSV endpoints cho Power BI Web connector. Auth: header `X-API-Key` (lấy từ `.env`).
+Docs (Swagger UI): http://localhost:8000/docs. Chi tiết: `powerbi/data_sources.md`.
+
+### Export CSV (cho Power BI / Excel / cloud sync)
+```bash
+python scripts/export_csv.py --flat            # pre-joined BI-ready tables
+python scripts/export_csv.py --all             # raw + flat
+python scripts/export_csv.py --table fact_gacha_revenue  # 1 table
+```
+Output: `data/processed/*.csv` + `_manifest.json`. Share qua LAN folder hoặc rclone cloud.
 
 ### Chạy dashboard inspector (xem data đã crawl)
 ```bash
@@ -118,6 +151,7 @@ Power BI dashboard user sẽ tự build (xem `powerbi/data_sources.md`).
 - 📈 Genre Trends — emerging genres + momentum
 - 🔍 Game Detail — deep dive 1 game + raw payload
 - 💼 Deal Evaluation — scorecard + ROAS calculator
+- 💰 Gacha Revenue — top 50 monthly revenue tracker (OCR from r/gachagaming)
 
 ### Init database
 ```bash
@@ -155,10 +189,17 @@ with get_connection() as conn:
 | `src/pipeline.py` | Orchestrator (cô lập failure từng source) |
 | `scripts/run_daily.py` | CLI entry point (games pipeline) |
 | `scripts/run_news.py` | CLI entry point (news briefing) |
+| `scripts/manual/parse_gacha_html.py` | Parse HTML gacha revenue table → SQLite (monthly) |
+| `scripts/manual/load_gacha_revenue.py` | Fallback CSV loader cho gacha revenue |
 | `scripts/generate_report.py` | Daily briefing markdown generator |
 | `scripts/data_quality.py` | Data quality alerts (freshness/anomaly/integrity) |
 | `scripts/init_db.py` | Tạo schema + populate dim_date |
+| `scripts/serve_api.py` | Chạy FastAPI server (serve data cho Power BI) |
+| `scripts/export_csv.py` | Export SQLite → CSV (Power BI / Excel / cloud sync) |
+| `scripts/manual/parse_gacha_html.py` | Parse HTML gacha revenue table → SQLite (monthly) |
+| `scripts/manual/load_gacha_revenue.py` | Fallback CSV loader cho gacha revenue |
 | `scripts/manual/` | Slot cho Sensor Tower data save-tay (xem README) |
+| `src/api/server.py` | FastAPI app — REST endpoints cho Power BI |
 | `dashboard/app.py` | Streamlit inspector — xem data đã crawl (4 pages) |
 | `powerbi/data_sources.md` | Hướng dẫn connect Power BI |
 
@@ -229,6 +270,9 @@ Khi bạn mở Mac lên, có thể nói các kiểu:
 | "chỉ chạy Steam thôi" | `python scripts/run_daily.py --source steam` |
 | "lấy tin" / "morning briefing" | `python scripts/run_news.py` (gaming+AI+HN) rồi `python scripts/generate_report.py` |
 | "lấy tin AI" | `python scripts/run_news.py --source ai` |
+| "thêm gacha revenue" / "load gacha" | Mở revenue report → copy HTML table → save file → `python scripts/manual/parse_gacha_html.py <file.html>` |
+| "serve API" / "Power BI" | `python scripts/serve_api.py` (Power BI kéo data qua Web connector) |
+| "export CSV" | `python scripts/export_csv.py --flat` (cho Excel / LAN share) |
 | "check data" | `python scripts/data_quality.py` hoặc query DB trực tiếp |
 | "đánh giá game X" | Mở dashboard trang 💼 Deal Evaluation, hoặc viết script scorecard |
 | "làm Power BI" | Hướng dẫn theo `powerbi/data_sources.md` |

@@ -59,13 +59,15 @@
 - **Cách dùng:** Patch notes, DLC announcements cho game Steam đang track
 - **Cập nhật:** 2026-07-27
 
-### Reddit (HIỆN TẠI SKIP)
-- **Endpoint:** `https://www.reddit.com/r/<sub>/top.json`
-- **Trạng thái:** **403 Blocked** — Reddit đã chặn unauthenticated JSON từ 2023
-- **Cách bật lại:** Cần đăng ký Reddit app (free) → OAuth2 client_credentials
-  → set `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` trong `.env`
-- **Quyết định:** Skip trong MVP. Code sẵn trong `news_crawler.py` để enable sau.
-- **Cập nhật:** 2026-07-27
+### Gacha revenue — Tier 1 ✅ (manual HTML input)
+- **Nguồn:** revenue.ennead.cc (và tương tự) — data gốc Sensor Tower mobile estimates
+- **Method:** **Human-in-the-loop** — user copy HTML table từ browser → parser → SQLite.
+  KHÔNG scrap tự động (revenue.ennead.cc bot-blocked, Reddit no-auth đóng cửa từ 5/2026).
+- **Pipeline:** `scripts/manual/parse_gacha_html.py` (BeautifulSoup parse HTML table)
+- **Audit:** mỗi fact có `source` column ('ennead' | 'manual') + `fetched_at` timestamp
+- **Caveat:** Revenue = mobile only (PC/console excluded). Data là ước tính, không phải số thật.
+- **Quyết định:** Manual mode = hợp lệ + transparent. Auto-scrap bị block + sai ToS.
+- **Cập nhật:** 2026-07-28
 
 ---
 

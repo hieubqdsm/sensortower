@@ -113,6 +113,7 @@ PAGES = [
     "📈 Genre Trends",
     "🔍 Game Detail",
     "💼 Deal Evaluation",
+    "💰 Gacha Revenue",
 ]
 page = st.sidebar.radio("Navigate", PAGES, label_visibility="collapsed")
 st.sidebar.divider()
@@ -796,6 +797,112 @@ elif page == PAGES[6]:
         st.dataframe(pd.DataFrame(sens_data), use_container_width=True, hide_index=True)
     else:
         st.warning("Cần nhập LTV và CPI để tính ROAS.")
+
+
+# =========================================================================
+# PAGE 8: 💰 Gacha Revenue
+# =========================================================================
+elif page == PAGES[7]:
+    st.title("💰 Gacha Revenue Tracker")
+    st.caption(
+        "Top 50 mobile gacha revenue hàng tháng — OCR từ r/gachagaming monthly reports. "
+        "Source gốc: Sensor Tower mobile estimates (PC/console excluded)."
+    )
+
+    @st.cache_data(ttl=300)
+    def load_gacha_revenue() -> pd.DataFrame:
+        with get_connection() as conn:
+            df = pd.read_sql_query(
+                """
+                SELECT g.name as game, g.game_id, g.icon_url, g.first_seen_month,
+                       r.snapshot_month, r.rank, r.revenue_usd, r.scope, r.source
+                FROM fact_gacha_revenue r
+                JOIN dim_gacha_game g ON r.game_id = g.game_id
+                ORDER BY r.snapshot_month DESC, r.rank ASC
+                """,
+                conn,
+            )
+        return df
+
+    gacha = load_gacha_revenue()
+
+    if gacha.empty:
+        st.warning(
+            "❌ Chưa có gacha revenue data. "
+            "Mở revenue.ennead.cc → copy HTML table → save file → "
+            "`python scripts/manual/parse_gacha_html.py data/manual/gacha_2026-06.html`"
+        )
+    else:
+        # KPIs
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Months tracked", gacha["snapshot_month"].nunique())
+        col2.metric("Games tracked", gacha["game_id"].nunique())
+        col3.metric("Total facts", len(gacha))
+        latest_month = gacha["snapshot_month"].max()
+        latest_total = gacha[gacha["snapshot_month"] == latest_month]["revenue_usd"].sum()
+        col4.metric(f"Revenue ({latest_month})",
+                    f"${latest_total/1e6:.1f}M")
+
+        st.divider()
+
+        # Filters
+        colf1, colf2 = st.columns(2)
+        with colf1:
+            all_games = sorted(gacha["game"].unique())
+            selected_games = st.multiselect(
+                "🎮 Games so sánh (trend lines)",
+                all_games,
+                default=[g for g in ["Genshin Impact", "Honkai: Star Rail",
+                                     "Love and Deepspace", "Wuthering Waves"]
+                         if g in all_games] or all_games[:5],
+            )
+        with colf2:
+            top_n = st.slider("Top N games (market share)", 5, 30, 10)
+
+        st.subheader("📈 Revenue Trend")
+        st.caption("Monthly revenue (USD) cho games đã chọn — xem momentum qua thời gian")
+        if selected_games:
+            trend_df = (
+                gacha[gacha["game"].isin(selected_games)]
+                .pivot_table(index="snapshot_month", columns="game",
+                             values="revenue_usd", aggfunc="sum")
+                .fillna(0)
+                .sort_index()
+            )
+            st.plotly_chart(
+                px.line(trend_df, x=trend_df.index, y=trend_df.columns,
+                        labels={"value": "Revenue (USD)", "snapshot_month": "Month"},
+                        title="Monthly Revenue Trend"),
+                use_container_width=True,
+            )
+        else:
+            st.info("Chọn ít nhất 1 game ở filter trên.")
+
+        st.divider()
+        st.subheader("📊 Market Share (latest month)")
+        latest_data = gacha[gacha["snapshot_month"] == latest_month].nlargest(top_n, "revenue_usd")
+        fig_bar = px.bar(
+            latest_data, x="revenue_usd", y="game", orientation="h",
+            labels={"revenue_usd": "Revenue (USD)", "game": ""},
+            title=f"Top {top_n} Gacha Games — {latest_month}",
+        )
+        fig_bar.update_yaxes(autorange="reversed")
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        st.divider()
+        st.subheader("🏆 Latest Month — Full Ranking")
+        latest_full = gacha[gacha["snapshot_month"] == latest_month][
+            ["rank", "game", "scope", "revenue_usd"]
+        ].sort_values("rank")
+        display = latest_full.copy()
+        display["revenue"] = display["revenue_usd"].apply(lambda x: f"${x/1e6:.2f}M")
+        display = display[["rank", "game", "scope", "revenue"]]
+        display.columns = ["Rank", "Game", "Scope", "Revenue (est)"]
+        st.dataframe(display, use_container_width=True, hide_index=True)
+        st.caption(
+            f"💡 Data parsed từ HTML table (source: {gacha['source'].iloc[0]}). "
+            f"Revenue = mobile estimates (PC/console excluded)."
+        )
 
 
 # ---- Footer --------------------------------------------------------------

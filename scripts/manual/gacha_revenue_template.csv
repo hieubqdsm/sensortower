@@ -1,0 +1,15 @@
+month,rank,game,revenue_usd,source_url
+# CSV template (FALLBACK) — cách chính là HTML parser: scripts/manual/parse_gacha_html.py
+# Chỉ dùng CSV này khi không có HTML table (vd: data từ source khác dạng text).
+#
+# Format:
+#   month       — YYYY-MM (vd: 2026-05)
+#   rank        — 1..N (vị trí trong tháng đó)
+#   game        — tên game chính xác
+#   revenue_usd — số USD (chấp nhận $48,975,000 / 48.975M / 48975000)
+#   source_url  — link nguồn (audit)
+#
+# Load: python scripts/manual/load_gacha_revenue.py <file.csv>
+2026-06,1,Love and Deepspace,38375000,https://revenue.ennead.cc/revenue
+2026-06,2,Wuthering Waves,34000000,https://revenue.ennead.cc/revenue
+2026-06,3,Genshin Impact,33340000,https://revenue.ennead.cc/revenue

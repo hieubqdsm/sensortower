@@ -142,6 +142,43 @@ CREATE TABLE IF NOT EXISTS fact_news (
 CREATE INDEX IF NOT EXISTS idx_fact_news_published   ON fact_news(published_at);
 CREATE INDEX IF NOT EXISTS idx_fact_news_source      ON fact_news(source_id);
 CREATE INDEX IF NOT EXISTS idx_fact_news_game        ON fact_news(game_id);
+
+-- =========================================================
+-- GACHA REVENUE — mobile gacha game monthly revenue tracker
+-- Input: HTML table paste hàng tháng (revenue.ennead.cc hoặc tương tự).
+-- Source gốc: Sensor Tower mobile estimates (PC/console excluded).
+-- Schema tách dim_gacha_game riêng (không nhồi vào dim_game vì metadata khác).
+-- =========================================================
+
+-- Dimension: gacha game (auto-created từ tên game trong HTML table)
+CREATE TABLE IF NOT EXISTS dim_gacha_game (
+    game_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name             TEXT NOT NULL UNIQUE,        -- "Love and Deepspace"
+    slug             TEXT NOT NULL,               -- "love-and-deepspace" (URL-friendly)
+    icon_url         TEXT,                        -- từ <img alt src> trong HTML
+    publisher        TEXT,
+    first_seen_month TEXT,                        -- 'YYYY-MM' tháng đầu xuất hiện
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dim_gacha_game_slug ON dim_gacha_game(slug);
+
+-- Fact: monthly revenue snapshot (1 row / game / tháng, idempotent UPSERT)
+CREATE TABLE IF NOT EXISTS fact_gacha_revenue (
+    fact_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id         INTEGER NOT NULL,             -- FK → dim_gacha_game
+    snapshot_month  TEXT NOT NULL,                -- 'YYYY-MM' (tháng của data, không phải tháng input)
+    rank            INTEGER NOT NULL,             -- 1..N vị trí trong tháng đó
+    revenue_usd     REAL NOT NULL,                -- ước tính mobile revenue (USD)
+    scope           TEXT,                         -- 'combined' | 'global' | 'cn' | 'jp' (region breakdown)
+    source          TEXT DEFAULT 'ennead',        -- 'ennead' | 'reddit' | 'manual' (audit nguồn input)
+    fetched_at      TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (game_id) REFERENCES dim_gacha_game(game_id),
+    UNIQUE(game_id, snapshot_month)               -- UPSERT key (idempotent: re-parse không duplicate)
+);
+CREATE INDEX IF NOT EXISTS idx_fact_gacha_month ON fact_gacha_revenue(snapshot_month);
+CREATE INDEX IF NOT EXISTS idx_fact_gacha_rank  ON fact_gacha_revenue(snapshot_month, rank);
+CREATE INDEX IF NOT EXISTS idx_fact_gacha_game  ON fact_gacha_revenue(game_id);
 """
 
 
@@ -181,6 +218,7 @@ def get_table_rowcounts(db_path: Path | None = None) -> dict[str, int]:
         "dim_game", "dim_date", "dim_publisher",
         "dim_news_source", "fact_news",
         "fact_steam_playercounts", "fact_itunes_rankings", "fact_engagement_metrics",
+        "dim_gacha_game", "fact_gacha_revenue",
     ]
     out: dict[str, int] = {}
     with get_connection(db_path) as conn:

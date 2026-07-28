@@ -50,6 +50,11 @@ STEAM_API_KEY: Final[str] = os.getenv("STEAM_API_KEY", "")
 TWITCH_CLIENT_ID: Final[str] = os.getenv("TWITCH_CLIENT_ID", "")
 TWITCH_CLIENT_SECRET: Final[str] = os.getenv("TWITCH_CLIENT_SECRET", "")
 
+# ---- API server (Power BI / cloudflare tunnel auth) ------------------------
+# Bất kỳ random string nào — dùng để bảo vệ API khi expose ra internet.
+# Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
+API_KEY: Final[str] = os.getenv("API_KEY", "")
+
 
 def validate_credentials() -> list[str]:
     """Return list of missing required credentials (empty = OK)."""

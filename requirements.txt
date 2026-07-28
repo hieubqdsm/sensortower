@@ -1,11 +1,19 @@
 # ============================================================
 # Sensor Tower Pipeline - Python Dependencies
-# Python 3.10+ required (tested on 3.14)
+# Python 3.13+ required (tested on 3.13.14)
 # Install: pip install -r requirements.txt
 # ============================================================
 
 # ---- HTTP & API clients ----
 requests>=2.32,<3.0            # Đồng bộ HTTP client (Steam, iTunes, IGDB)
+
+# ---- HTML parsing (gacha revenue: parse table từ monthly HTML report) ----
+beautifulsoup4>=4.12           # Parser cho HTML table (revenue top 50)
+lxml>=5.0                      # Backend nhanh cho bs4
+
+# ---- API server (serve data cho Power BI qua LAN/cloudflare tunnel) ----
+fastapi>=0.115,<1.0            # REST API framework
+uvicorn[standard]>=0.30        # ASGI server (chạy API)
 
 # ---- Retry & resilience ----
 tenacity>=9.0,<10.0            # Exponential backoff cho rate-limited APIs
