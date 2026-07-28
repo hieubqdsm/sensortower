@@ -179,6 +179,22 @@ CREATE TABLE IF NOT EXISTS fact_gacha_revenue (
 CREATE INDEX IF NOT EXISTS idx_fact_gacha_month ON fact_gacha_revenue(snapshot_month);
 CREATE INDEX IF NOT EXISTS idx_fact_gacha_rank  ON fact_gacha_revenue(snapshot_month, rank);
 CREATE INDEX IF NOT EXISTS idx_fact_gacha_game  ON fact_gacha_revenue(game_id);
+
+-- =========================================================
+-- STEAM HOURLY CCU — timestamp granularity cho CCU trajectory
+-- Scheduler crawls hourly → mỗi giờ 1 snapshot per game
+-- =========================================================
+CREATE TABLE IF NOT EXISTS fact_steam_hourly_ccu (
+    snapshot_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id        INTEGER NOT NULL,
+    snapshot_ts    TEXT NOT NULL,                -- ISO timestamp 'YYYY-MM-DD HH:MM:SS' (full hour)
+    peak_ccu       INTEGER NOT NULL,
+    fetched_at     TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (game_id) REFERENCES dim_game(game_id),
+    UNIQUE(game_id, snapshot_ts)                 -- 1 row/game/hour
+);
+CREATE INDEX IF NOT EXISTS idx_steam_hourly_ts   ON fact_steam_hourly_ccu(snapshot_ts);
+CREATE INDEX IF NOT EXISTS idx_steam_hourly_game ON fact_steam_hourly_ccu(game_id, snapshot_ts);
 """
 
 
@@ -219,6 +235,7 @@ def get_table_rowcounts(db_path: Path | None = None) -> dict[str, int]:
         "dim_news_source", "fact_news",
         "fact_steam_playercounts", "fact_itunes_rankings", "fact_engagement_metrics",
         "dim_gacha_game", "fact_gacha_revenue",
+        "fact_steam_hourly_ccu",
     ]
     out: dict[str, int] = {}
     with get_connection(db_path) as conn:

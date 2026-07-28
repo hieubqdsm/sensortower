@@ -487,34 +487,48 @@ elif page == PAGES[3]:
 
     st.divider()
 
-    # === CCU trajectory (line chart — cần ≥2 snapshots) ===
-    st.subheader("📈 CCU Trajectory")
-    if n_dates >= 2:
+    # === CCU trajectory (hourly timeline từ fact_steam_hourly_ccu) ===
+    st.subheader("📈 CCU Trajectory (hourly)")
+    with get_connection() as conn:
+        hourly_df = pd.read_sql_query(
+            """
+            SELECT h.snapshot_ts, h.peak_ccu, g.name
+            FROM fact_steam_hourly_ccu h
+            JOIN dim_game g ON h.game_id = g.game_id
+            ORDER BY h.snapshot_ts DESC
+            """,
+            conn,
+        )
+
+    if hourly_df.empty:
+        st.info("⏳ Chưa có hourly data. Scheduler sẽ craw mỗi giờ → timeline sẽ render.")
+    else:
+        n_hours = hourly_df["snapshot_ts"].nunique()
+        n_games_hourly = hourly_df["name"].nunique()
+        st.caption(f"📊 {n_games_hourly} games × {n_hours} hourly snapshots")
+
+        # Game selector for timeline
         sel_traj = st.multiselect(
-            "🎮 Games so sánh trajectory",
-            sorted(latest.nlargest(15, "peak_ccu")["name"].dropna().unique()),
+            "🎮 Games so sánh CCU timeline",
+            sorted(hourly_df.groupby("name")["peak_ccu"].max()
+                   .nlargest(15).index.tolist()),
+            default=hourly_df.groupby("name")["peak_ccu"].max()
+                   .nlargest(3).index.tolist(),
             max_selections=10,
+            key="steam_hourly_traj",
         )
         if sel_traj:
-            traj = df[df["name"].isin(sel_traj)].copy()
-            traj = traj.sort_values(["name", "snapshot_date"])
+            traj = hourly_df[hourly_df["name"].isin(sel_traj)].copy()
+            traj = traj.sort_values(["name", "snapshot_ts"])
             fig = px.line(
-                traj, x="snapshot_date", y="peak_ccu", color="name",
-                markers=True, title="CCU over time (hourly snapshots)",
-                labels={"peak_ccu": "Peak Concurrent Players", "snapshot_date": "Date"},
+                traj, x="snapshot_ts", y="peak_ccu", color="name",
+                markers=True, title="Steam CCU over time (hourly snapshots)",
+                labels={"peak_ccu": "Peak Concurrent Players",
+                        "snapshot_ts": "Time (hourly)"},
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Chọn ít nhất 1 game để xem trajectory.")
-    else:
-        st.info(
-            f"⏳ Hiện chỉ có {n_dates} snapshot. Cron hourly sẽ tự thêm data — "
-            f"vài giờ nữa quay lại sẽ có line chart CCU trajectory."
-        )
-        st.caption(
-            "Pipeline: cron `0 * * * *` chạy Steam crawler mỗi giờ → "
-            "`fact_steam_playercounts` thêm 1 row/game/hour → line chart tự render."
-        )
+            st.info("Chọn ít nhất 1 game để xem timeline.")
 
     st.divider()
 

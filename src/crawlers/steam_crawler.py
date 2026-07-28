@@ -121,9 +121,27 @@ class SteamCrawler(BaseCrawler):
                 ON CONFLICT(game_id, snapshot_date) DO UPDATE SET
                     peak_ccu=excluded.peak_ccu,
                     positive_reviews=excluded.positive_reviews,
-                    negative_reviews=excluded.negative_reviews
+                    negative_reviews=excluded.negative_reviews,
+                    fetched_at=datetime('now')
                 """,
                 (game_id, snapshot_date, peak_ccu, positive, negative),
+            )
+
+    def insert_hourly_ccu(self, game_id: int, peak_ccu: int) -> None:
+        """Insert hourly CCU snapshot (timestamp granularity cho trajectory chart)."""
+        # Truncate to hour: 'YYYY-MM-DD HH:00:00'
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y-%m-%d %H:00:00")
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO fact_steam_hourly_ccu (game_id, snapshot_ts, peak_ccu)
+                VALUES (?, ?, ?)
+                ON CONFLICT(game_id, snapshot_ts) DO UPDATE SET
+                    peak_ccu=excluded.peak_ccu,
+                    fetched_at=datetime('now')
+                """,
+                (game_id, ts, peak_ccu),
             )
 
     # ---- Main entry ------------------------------------------------------
@@ -191,7 +209,7 @@ class SteamCrawler(BaseCrawler):
             if not peak_ccu:
                 peak_ccu = self.fetch_current_ccu(appid)
 
-            # 4. Persist fact
+            # 4. Persist fact (daily summary)
             self.upsert_playercount_fact(
                 game_id=game_id,
                 snapshot_date=today,
@@ -199,6 +217,8 @@ class SteamCrawler(BaseCrawler):
                 positive=reviews["positive"],
                 negative=reviews["negative"],
             )
+            # 5. Insert hourly CCU snapshot (cho timeline chart)
+            self.insert_hourly_ccu(game_id, int(peak_ccu))
             facts_ok += 1
 
         logger.success(f"[steam] DONE: {games_ok} games, {facts_ok} facts")
