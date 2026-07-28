@@ -105,6 +105,26 @@ st.sidebar.write("**Rows per table:**")
 for t, n in counts.items():
     st.sidebar.write(f"`{t}`: **{n:,}**")
 
+# ---- CSV Downloads (Power BI / Excel) ----
+st.sidebar.divider()
+st.sidebar.write("**📥 CSV Downloads (Power BI):**")
+try:
+    import socket
+    # Get LAN IP
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    lan_ip = s.getsockname()[0]
+    s.close()
+except Exception:
+    lan_ip = "localhost"
+
+api_base = f"http://{lan_ip}:8000"
+st.sidebar.markdown(f"API: [`{api_base}/downloads`]({api_base}/downloads)")
+csv_files = ["gacha_flat", "steam_flat", "itunes_flat", "news_flat", "dim_date"]
+for f in csv_files:
+    st.sidebar.markdown(f"&nbsp;&nbsp;[`{f}.csv`]({api_base}/downloads/{f}.csv)")
+st.sidebar.caption("Mở trên máy khác (cùng WiFi) để tải. API server phải đang chạy.")
+
 # ---- Page routing via radio (đơn giản, không cần multipage app) ---------
 PAGES = [
     "📊 Portfolio Overview",
