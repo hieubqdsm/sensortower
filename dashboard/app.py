@@ -821,12 +821,39 @@ elif page == PAGES[7]:
 
     col1, col2 = st.columns(2)
     with col1:
-        game_name = st.text_input("Game name", value="", placeholder="vd: Pixel Dungeon 3")
-        genre = st.selectbox(
-            "Genre",
-            ["Action", "RPG", "Strategy", "Casual", "Puzzle", "Simulation",
-             "Racing", "Sports", "Adventure", "MMO", "Other"]
+        # Game selection: either pick from DB or manual input
+        input_mode = st.radio(
+            "Game source",
+            ["📋 Chọn từ DB", "✍️ Nhập manual"],
+            horizontal=True,
+            label_visibility="collapsed",
         )
+
+        if input_mode == "📋 Chọn từ DB":
+            with get_connection() as conn:
+                db_games = pd.read_sql_query(
+                    """SELECT DISTINCT name, genre, source FROM dim_game
+                       WHERE name IS NOT NULL ORDER BY name""", conn)
+                # Also include gacha games
+                gacha_games = pd.read_sql_query(
+                    """SELECT DISTINCT name, NULL as genre, 'gacha' as source
+                       FROM dim_gacha_game ORDER BY name""", conn)
+            all_games = pd.concat([db_games, gacha_games], ignore_index=True)
+            sel_idx = st.selectbox(
+                "Chọn game để evaluate",
+                range(len(all_games)),
+                format_func=lambda i: f"{all_games.iloc[i]['name']} ({all_games.iloc[i]['source']})",
+            )
+            game_name = all_games.iloc[sel_idx]["name"]
+            db_genre = all_games.iloc[sel_idx]["genre"]
+            genre = db_genre if db_genre else "Action"
+        else:
+            game_name = st.text_input("Game name", value="", placeholder="vd: Pixel Dungeon 3")
+            genre = st.selectbox(
+                "Genre",
+                ["Action", "RPG", "Strategy", "Casual", "Puzzle", "Simulation",
+                 "Racing", "Sports", "Adventure", "MMO", "Roleplaying", "Other"]
+            )
         platform = st.selectbox("Platform", ["Mobile (iOS)", "Mobile (Android)",
                                               "PC (Steam)", "Cross-platform"])
         monetization = st.selectbox(
@@ -917,6 +944,73 @@ elif page == PAGES[7]:
     )
     fig.update_layout(yaxis={"categoryorder": "total ascending"}, height=350)
     st.plotly_chart(fig, use_container_width=True)
+
+    # ---- Competitor benchmark (từ DB thật) -----------------------------
+    st.divider()
+    st.subheader("📊 Competitor Benchmark (từ DB)")
+    st.caption("So sánh game submission với competitors trong cùng genre — data thật từ Steam/iTunes/Gacha")
+
+    with get_connection() as conn:
+        # Find games in same genre across sources
+        bench_games = pd.read_sql_query(
+            """
+            SELECT g.name, g.genre, g.publisher_name, g.source, g.price_usd,
+                   f.peak_ccu, f.positive_reviews, f.negative_reviews
+            FROM dim_game g
+            LEFT JOIN fact_steam_playercounts f ON g.game_id = f.game_id
+            WHERE g.genre LIKE ? AND g.source IN ('steam', 'itunes')
+            GROUP BY g.game_id
+            ORDER BY f.peak_ccu DESC NULLS LAST
+            LIMIT 10
+            """,
+            conn,
+            params=(f"%{genre}%",),
+        )
+        # Gacha competitors (revenue-based)
+        gacha_bench = pd.read_sql_query(
+            """
+            SELECT g.name, g.publisher, r.revenue_usd, r.snapshot_month, r.rank
+            FROM fact_gacha_revenue r
+            JOIN dim_gacha_game g ON r.game_id = g.game_id
+            WHERE r.snapshot_month = (SELECT MAX(snapshot_month) FROM fact_gacha_revenue)
+            ORDER BY r.revenue_usd DESC LIMIT 10
+            """,
+            conn,
+        )
+
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        st.write(f"**🎮 Steam/iTunes: '{genre}' competitors**")
+        if not bench_games.empty:
+            display = bench_games[["name", "source", "publisher_name", "peak_ccu"]].copy()
+            display["peak_ccu"] = display["peak_ccu"].apply(
+                lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
+            )
+            display.columns = ["Game", "Platform", "Publisher", "Peak CCU"]
+            st.dataframe(display, use_container_width=True, hide_index=True)
+        else:
+            st.info(f"Không có game '{genre}' trong DB.")
+
+    with col_b2:
+        st.write("**💰 Top gacha revenue (latest month)**")
+        if not gacha_bench.empty:
+            display = gacha_bench[["name", "publisher", "revenue_usd", "rank"]].copy()
+            display["revenue"] = display["revenue_usd"].apply(lambda x: f"${x/1e6:.1f}M")
+            display = display[["rank", "name", "publisher", "revenue"]]
+            display.columns = ["Rank", "Game", "Publisher", "Revenue"]
+            st.dataframe(display, use_container_width=True, hide_index=True)
+        else:
+            st.info("Chưa có gacha data.")
+
+    # Genre insights
+    if not bench_games.empty:
+        avg_ccu = bench_games["peak_ccu"].mean()
+        n_competitors = len(bench_games)
+        st.info(
+            f"📈 **Genre insight:** {n_competitors} games '{genre}' tracked. "
+            f"Avg peak CCU: {avg_ccu:,.0f}. "
+            f"{'Bão hòa — cần differentiation mạnh.' if n_competitors > 8 else 'Còn room — cơ hội tốt.'}"
+        )
 
     # ---- ROAS projection ----------------------------------------------
     st.divider()
