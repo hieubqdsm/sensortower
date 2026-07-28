@@ -15,11 +15,17 @@ JD yêu cầu phân tích các KPI: downloads, revenue, retention, ROAS. Tuy nhi
 | KPI | Có sẵn miễn phí + hợp pháp? | Thay thế |
 |-----|---------------------------|----------|
 | Downloads (mobile) | ❌ Chỉ Sensor Tower/data.ai (paid) | Xem ranking changes trên iTunes top charts |
-| Revenue (mobile) | ❌ Paid | Top grossing chart position |
-| DAU/MAU (mobile) | ❌ Paid | Ranking trajectory |
-| Player count (PC) | ✅ Steam API (`peak_ccu`) | Trực tiếp |
-| Reviews / sentiment | ✅ Steam/iTunes public | Trực tiếp |
-| Ad creatives | ✅ Meta/TikTok Ad Library | Trực tiếp |
+| Revenue (mobile) | ✅ Gacha revenue (community-compiled, ennead.cc) | Trực tiếp — fact_gacha_revenue |
+| Revenue (Steam) | ❌ Paid | Review count × ~$15 (industry avg ARPU proxy) |
+| DAU/MAU (mobile) | ❌ Paid | Ranking trajectory + review velocity |
+| Player count (PC) | ✅ Steam API (`peak_ccu`) | Trực tiếp — fact_steam_playercounts |
+| Retention D1/D7/D30 | ❌ Cần MMP (internal data) | Industry benchmark by genre (see §6) |
+| CPI / UA Spend | ❌ Cần Meta/TikTok Ad API (token required) | Ad creative count proxy (manual count) |
+| Reviews / sentiment | ✅ Steam/iTunes public | Trực tiếp — positive/negative ratio |
+| Ad creatives | 🟡 Meta/TikTok Ad Library (cần access token) | Manual browse (no API) |
+| Crash rate / ANR | ❌ Internal only (Firebase Crashlytics) | N/A — không có proxy |
+| ARPU/ARPPU | 🟡 Tính được nếu có DAU estimate | Revenue ÷ estimated DAU |
+| LTV | 🟡 Tính được nếu có retention curve | ARPU × avg_lifespan (genre benchmark) |
 
 ---
 
@@ -99,13 +105,53 @@ Dùng cho "Genre Trends" dashboard — recommend deal sourcing cho các genre đ
 
 ## 🚫 Giới hạn đã biết (transparency)
 
-1. **Không có actual revenue numbers** — chỉ có chart position proxy
+1. **Không có actual revenue numbers** — chỉ có chart position proxy (trừ gacha data từ ennead.cc)
 2. **Không có retention curves** — cần MMP (AppsFlyer/Adjust), future work
 3. **Player count chỉ cho Steam** — mobile metrics đều là proxy
 4. **Sample bias** — chỉ crawl top 100 mỗi nguồn, không đại diện long tail
+5. **No UA spend data** — Meta/TikTok Ad Library cần access token (Facebook App review)
+6. **No internal KPIs** — DAU/MAU/crash rate/IAP conversion là internal data, không có public source
 
 → Đây là **rào cản thực tế** mà bất kỳ BI Analyst không có enterprise license
 cũng gặp. Document rõ ràng để stakeholder hiểu.
+
+---
+
+## 📊 JD KPI Coverage Matrix
+
+| JD KPI Category | Metric | Data source | Status | Proxy available? |
+|----------------|--------|-------------|--------|-----------------|
+| **Game Performance** | CCU (Steam) | Steam Web API | ✅ Have | Direct |
+| | Rankings (iTunes) | iTunes Search API | ✅ Have | Direct |
+| | Reviews/Sentiment | Steam API | ✅ Have | Direct |
+| | Revenue (gacha) | ennead.cc HTML parse | ✅ Have | Direct |
+| | DAU/MAU | MMP (internal) | ❌ Missing | Ranking trajectory |
+| | Retention D1/D7/D30 | MMP (internal) | ❌ Missing | Genre benchmark |
+| | Crash rate/ANR | Firebase (internal) | ❌ Missing | N/A |
+| **User Acquisition** | CPI/Spend | Meta/TikTok Ad API | ❌ Missing | Ad count (manual) |
+| | Installs | MMP (internal) | ❌ Missing | Rank-based estimate |
+| | Creative performance | Ad Library | 🟡 Needs token | Manual browse |
+| **Monetization** | Revenue | ennead.cc + Steam proxy | ✅ Partial | Direct + proxy |
+| | ARPU/ARPPU | Revenue ÷ DAU | 🟡 Calculable | If DAU estimated |
+| | LTV | ARPU × lifespan | 🟡 Calculable | Genre benchmark |
+| | IAP conversion % | Internal analytics | ❌ Missing | N/A |
+| **Deal Assessment** | ROI/ROAS | CPI × LTV | ✅ Calculator | Dashboard ready |
+| | Market fit | Genre trends | ✅ Have | Direct |
+| | Competitor benchmark | Cross-game compare | ✅ Have | Direct |
+| **Market Intelligence** | Genre trends | Aggregated data | ✅ Have | Direct |
+| | Publisher share | dim_publisher | ✅ Have | Direct |
+| | News/sentiment | RSS + keywords | ✅ Have | Direct |
+
+### KPIs marked ❌ (cần internal data — không có public source)
+- **DAU/MAU**: cần MMP integration (AppsFlyer/Adjust/Firebase)
+- **Retention D1/D7/D30**: cần MMP cohort data
+- **Crash rate/ANR**: cần Firebase Crashlytics
+- **CPI/Spend**: cần Ad Network API access (Meta/TikTok business account)
+- **IAP conversion %**: cần internal analytics SDK
+
+→ **Portfolio note:** Đây là data thật sự chỉ có khi làm việc tại công ty game publishing.
+Trong portfolio, chúng ta simulate được analysis framework nhưng không có actual numbers.
+Interviewer hiểu limitation này — focus vào **analytical thinking**, không phải data completeness.
 
 ---
 
@@ -119,3 +165,54 @@ Sẽ enrich dần từ các nguồn public:
 - SteamDB insights (read-only public posts, không scrap)
 
 → Store trong `data/manual/benchmarks.csv` (không commit nếu có copyright).
+
+---
+
+## 6. Industry Benchmarks (cho proxy calculations)
+
+### Retention benchmarks (mobile games, by genre)
+
+Source: GameAnalytics, AppsFlyer industry reports (public summaries).
+
+| Genre | D1 Retention | D7 Retention | D30 Retention | Avg session (min) |
+|-------|-------------|-------------|--------------|-------------------|
+| Casual (Puzzle/Match) | 35-40% | 12-15% | 4-6% | 8-12 |
+| Hyper-casual | 30-35% | 8-10% | 2-3% | 4-6 |
+| Action/Shooter | 25-30% | 10-12% | 3-5% | 15-25 |
+| RPG / Gacha | 40-50% | 18-25% | 8-12% | 20-40 |
+| Strategy | 35-45% | 15-20% | 6-10% | 15-30 |
+| Simulation | 30-40% | 12-18% | 5-8% | 12-20 |
+
+### ARPU benchmarks (mobile, monthly)
+
+| Genre | ARPU (USD/month) | ARPPU (USD/month) | IAP conversion |
+|-------|------------------|-------------------|----------------|
+| Casual | $0.15-0.40 | $5-15 | 2-5% |
+| RPG / Gacha | $1.50-5.00 | $20-80 | 5-15% |
+| Strategy | $0.80-2.50 | $15-50 | 3-8% |
+| Action/Shooter | $0.30-1.00 | $8-25 | 2-6% |
+| Hyper-casual | $0.02-0.08 | N/A (ad-driven) | <1% IAP |
+
+### CPI benchmarks (by region, mobile)
+
+| Region | Casual CPI | RPG CPI | Action CPI |
+|--------|-----------|---------|------------|
+| US | $2-5 | $8-20 | $4-10 |
+| VN/SEA | $0.20-0.80 | $1.50-5 | $0.50-2 |
+| JP | $3-8 | $10-30 | $5-15 |
+
+### LTV formula (simplified)
+
+```
+LTV = ARPU × (avg_lifespan_in_days)
+avg_lifespan ≈ 1 / (1 - D1_retention)  [geometric series approximation]
+
+Example (RPG gacha):
+  ARPU = $2.50/month, D1 = 45%
+  avg_lifespan ≈ 1/(1-0.45) = 1.8 days (rough)
+  → Better: use D30 retention curve integral
+  LTV_30 = ARPU_daily × Σ(retention_curve, day 1..30)
+```
+
+⚠️ Đây là **benchmarks công khai**, dùng cho **ước tính sơ bộ** trong Deal Assessment.
+Khi có dữ liệu nội bộ thực tế, thay thế benchmarks bằng dữ liệu thực.
