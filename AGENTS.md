@@ -135,6 +135,15 @@ python scripts/export_csv.py --table fact_gacha_revenue  # 1 table
 ```
 Output: `data/processed/*.csv` + `_manifest.json`. Share qua LAN folder hoặc rclone cloud.
 
+### Chạy pipeline scheduler (tự crawl theo giờ — KHÔNG cần cron/crontab)
+```bash
+python scripts/serve_pipeline.py              # chạy nền, tự loop theo giờ
+python scripts/serve_pipeline.py --dry-run    # xem lịch, không chạy
+python scripts/serve_pipeline.py --once       # test 1 lần
+```
+Schedule: `:00` Steam crawl | `:30` iTunes crawl | `06:00` daily News crawl.
+Log: `logs/pipeline-scheduler.log`. **Terminal phải mở** (giống dashboard).
+
 ### Chạy dashboard inspector (xem data đã crawl)
 ```bash
 streamlit run dashboard/app.py
@@ -195,6 +204,7 @@ with get_connection() as conn:
 | `scripts/data_quality.py` | Data quality alerts (freshness/anomaly/integrity) |
 | `scripts/init_db.py` | Tạo schema + populate dim_date |
 | `scripts/serve_api.py` | Chạy FastAPI server (serve data cho Power BI) |
+| `scripts/serve_pipeline.py` | Scheduler tự crawl theo giờ (Steam + iTunes + News) |
 | `scripts/export_csv.py` | Export SQLite → CSV (Power BI / Excel / cloud sync) |
 | `scripts/manual/parse_gacha_html.py` | Parse HTML gacha revenue table → SQLite (monthly) |
 | `scripts/manual/load_gacha_revenue.py` | Fallback CSV loader cho gacha revenue |
@@ -269,6 +279,7 @@ Khi bạn mở Mac lên, có thể nói các kiểu:
 | "chạy pipeline" | `python scripts/run_daily.py` |
 | "chỉ chạy Steam thôi" | `python scripts/run_daily.py --source steam` |
 | "lấy tin" / "morning briefing" | `python scripts/run_news.py` (gaming+AI+HN) rồi `python scripts/generate_report.py` |
+| "chạy scheduler" / "auto crawl" | `python scripts/serve_pipeline.py` (tự crawl Steam/iTunes/News theo giờ) |
 | "lấy tin AI" | `python scripts/run_news.py --source ai` |
 | "thêm gacha revenue" / "load gacha" | Mở revenue report → copy HTML table → save file → `python scripts/manual/parse_gacha_html.py <file.html>` |
 | "serve API" / "Power BI" | `python scripts/serve_api.py` (Power BI kéo data qua Web connector) |
