@@ -823,124 +823,205 @@ elif page == PAGES[5]:
 
 
 # =========================================================================
-# PAGE 7: DEAL EVALUATION (game scorecard + ROAS calculator)
+# PAGE 7: DEAL EVALUATION — 8 tiêu chí data-validated cho VN market
 # =========================================================================
 elif page == PAGES[7]:
-    st.title("💼 Deal Evaluation")
-    st.caption("Scorecard + ROAS calculator cho game publishing deals")
+    st.title("💼 Deal Evaluation — VN Market")
+    st.caption("8 tiêu chí data-validated từ top VN iTunes + VNG/Garena portfolio pattern")
 
-    st.divider()
-    st.subheader("📊 Deal Scorecard")
-    st.caption("Nhập thông tin game submission → đánh giá PURSUE/WATCH/PASS")
+    # ---- Input -----------------------------------------------------------
+    st.subheader("📝 Game Submission")
+    input_mode = st.radio(
+        "Game source",
+        ["📋 Chọn từ DB", "✍️ Nhập manual"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        # Game selection: either pick from DB or manual input
-        input_mode = st.radio(
-            "Game source",
-            ["📋 Chọn từ DB", "✍️ Nhập manual"],
-            horizontal=True,
-            label_visibility="collapsed",
+    if input_mode == "📋 Chọn từ DB":
+        with get_connection() as conn:
+            db_games = pd.read_sql_query(
+                """SELECT DISTINCT name, genre, source FROM dim_game
+                   WHERE name IS NOT NULL ORDER BY name""", conn)
+            gacha_games = pd.read_sql_query(
+                """SELECT DISTINCT name, NULL as genre, 'gacha' as source
+                   FROM dim_gacha_game ORDER BY name""", conn)
+        all_games = pd.concat([db_games, gacha_games], ignore_index=True)
+        sel_idx = st.selectbox(
+            "Chọn game để evaluate",
+            range(len(all_games)),
+            format_func=lambda i: f"{all_games.iloc[i]['name']} ({all_games.iloc[i]['source']})",
         )
+        game_name = all_games.iloc[sel_idx]["name"]
+        db_genre = all_games.iloc[sel_idx]["genre"]
+        default_genre = db_genre if db_genre else "Action"
+    else:
+        game_name = st.text_input("Game name", value="", placeholder="vd: Pixel Dungeon 3")
+        default_genre = "Action"
 
-        if input_mode == "📋 Chọn từ DB":
-            with get_connection() as conn:
-                db_games = pd.read_sql_query(
-                    """SELECT DISTINCT name, genre, source FROM dim_game
-                       WHERE name IS NOT NULL ORDER BY name""", conn)
-                # Also include gacha games
-                gacha_games = pd.read_sql_query(
-                    """SELECT DISTINCT name, NULL as genre, 'gacha' as source
-                       FROM dim_gacha_game ORDER BY name""", conn)
-            all_games = pd.concat([db_games, gacha_games], ignore_index=True)
-            sel_idx = st.selectbox(
-                "Chọn game để evaluate",
-                range(len(all_games)),
-                format_func=lambda i: f"{all_games.iloc[i]['name']} ({all_games.iloc[i]['source']})",
-            )
-            game_name = all_games.iloc[sel_idx]["name"]
-            db_genre = all_games.iloc[sel_idx]["genre"]
-            genre = db_genre if db_genre else "Action"
-        else:
-            game_name = st.text_input("Game name", value="", placeholder="vd: Pixel Dungeon 3")
-            genre = st.selectbox(
-                "Genre",
-                ["Action", "RPG", "Strategy", "Casual", "Puzzle", "Simulation",
-                 "Racing", "Sports", "Adventure", "MMO", "Roleplaying", "Other"]
-            )
-        platform = st.selectbox("Platform", ["Mobile (iOS)", "Mobile (Android)",
-                                              "PC (Steam)", "Cross-platform"])
-        monetization = st.selectbox(
-            "Monetization model",
-            ["F2P + IAP", "F2P + Ads", "F2P + Hybrid", "Premium (paid)",
-             "Subscription", "Paid + DLC"]
-        )
+    col_in1, col_in2, col_in3 = st.columns(3)
+    with col_in1:
+        genre = st.selectbox("Genre", [
+            "Action", "Adventure", "Strategy", "Sports",  # top VN genres
+            "RPG", "Roleplaying", "Casual", "Puzzle", "Simulation",
+            "Racing", "Board", "Music", "MMO", "Other"])
+    with col_in2:
+        monetization = st.selectbox("Monetization", [
+            "F2P + IAP", "F2P + Ads", "F2P + Hybrid",
+            "Premium (paid)", "Subscription", "Paid + DLC"])
+    with col_in3:
+        has_vn_publisher = st.selectbox("VN publishing partner?", [
+            "VNG", "Garena", "VTC Mobile", "Other VN publisher",
+            "Self-publish", "No VN partner yet"])
 
-    with col2:
-        deal_cost = st.number_input("Deal cost (USD)", min_value=0, value=50000, step=5000)
-        target_cpi = st.number_input("Target CPI (USD)", min_value=0.0, value=0.50, step=0.05)
-        est_ltv = st.number_input("Estimated LTV (USD)", min_value=0.0, value=0.80, step=0.05)
-        target_d30_retention = st.slider("Target D30 retention %", 0, 50, 15)
-        review_score = st.slider("Current review score (0-100)", 0, 100, 75)
+    col_in4, col_in5 = st.columns(2)
+    with col_in4:
+        target_cpi = st.number_input("Target CPI VN (USD)", min_value=0.0, value=0.80, step=0.10)
+        est_ltv = st.number_input("Estimated LTV (USD)", min_value=0.0, value=1.50, step=0.10)
+    with col_in5:
+        multiplayer = st.selectbox("Multiplayer/Social", [
+            "Yes — multiplayer/esport", "Yes — co-op/social",
+            "No — single player", "No — but viral potential"])
+        tech_req = st.selectbox("Hardware requirement", [
+            "Low (runs on $100 phones)", "Medium ($200-300 phones)",
+            "High ($400+ phones)", "Flagship only"])
 
-    # ---- Compute scores -------------------------------------------------
+    # ---- Compute 8 scores (data-validated weights) ---------------------
     st.divider()
-    st.subheader("🎯 Scorecard Result")
+    st.subheader("🎯 VN Market Scorecard (8 factors)")
 
-    # Simple scoring logic (heuristic, can be refined)
     scores = {}
+    notes = {}
 
-    # Market fit (genre popularity in current DB)
-    with get_connection() as conn:
-        genre_count = conn.execute(
-            "SELECT COUNT(*) FROM dim_game WHERE genre LIKE ?", (f"%{genre}%",)
-        ).fetchone()[0]
-    # Benchmark: nếu genre có nhiều game tracked → market có demand
-    market_fit_score = min(10, 5 + genre_count // 3)
-    scores["Market Fit"] = market_fit_score
+    # 1. F2P (VETO — 0 paid games in top 40 VN)
+    f2p_models = ["F2P + IAP", "F2P + Ads", "F2P + Hybrid"]
+    if monetization in f2p_models:
+        scores["1. F2P Model"] = 10
+        notes["1. F2P Model"] = "✅ F2P — phù hợp VN (100% top 40 VN là free)"
+    else:
+        scores["1. F2P Model"] = 0
+        notes["1. F2P Model"] = "🔴 VETO: 0 paid games trong top VN. Market reject paid."
 
-    # Monetization potential
-    mono_scores = {"F2P + Hybrid": 9, "F2P + IAP": 8, "Subscription": 7,
-                   "Paid + DLC": 6, "F2P + Ads": 5, "Premium (paid)": 4}
-    scores["Monetization"] = mono_scores.get(monetization, 5)
+    # 2. VN Publisher (25% weight — top 10 VN = 100% have VN publisher)
+    vn_pubs = ["VNG", "Garena", "VTC Mobile", "Other VN publisher"]
+    if has_vn_publisher in vn_pubs:
+        scores["2. VN Publisher"] = 10
+        notes["2. VN Publisher"] = f"✅ {has_vn_publisher} — proven VN publisher (top 10 = 100% VN-published)"
+    elif has_vn_publisher == "Self-publish":
+        scores["2. VN Publisher"] = 5
+        notes["2. VN Publisher"] = "⚠️ Self-publish — cần payment gateway + localize team"
+    else:
+        scores["2. VN Publisher"] = 2
+        notes["2. VN Publisher"] = "🔴 No VN partner — rủi ro cao (payment + localize + legal)"
 
-    # ROI / ROAS
+    # 3. Payment integration (correlated with VN publisher)
+    if has_vn_publisher in vn_pubs:
+        scores["3. Payment Gateway"] = 9
+        notes["3. Payment Gateway"] = "✅ VN publisher = có payment gateway (Momo/ZaloPay/Zing)"
+    elif has_vn_publisher == "Self-publish":
+        scores["3. Payment Gateway"] = 4
+        notes["3. Payment Gateway"] = "⚠️ Cần tự tích hợp Momo/ZaloPay — tốn thời gian"
+    else:
+        scores["3. Payment Gateway"] = 2
+        notes["3. Payment Gateway"] = "🔴 Không có payment VN → user không nạp được"
+
+    # 4. Multiplayer/Social (top 5 VN = 100% multiplayer)
+    if "multiplayer" in multiplayer.lower() or "esport" in multiplayer.lower():
+        scores["4. Multiplayer/Social"] = 10
+        notes["4. Multiplayer/Social"] = "✅ Multiplayer — top 5 VN (Liên Quân, Free Fire, PUBG) đều multiplayer"
+    elif "co-op" in multiplayer.lower() or "social" in multiplayer.lower():
+        scores["4. Multiplayer/Social"] = 8
+        notes["4. Multiplayer/Social"] = "✅ Co-op/social — retention booster"
+    elif "viral" in multiplayer.lower():
+        scores["4. Multiplayer/Social"] = 6
+        notes["4. Multiplayer/Social"] = "🟡 Viral potential — cần UA strategy mạnh"
+    else:
+        scores["4. Multiplayer/Social"] = 4
+        notes["4. Multiplayer/Social"] = "⚠️ Single-player — khó retain trong thị trường VN multiplayer-heavy"
+
+    # 5. Genre fit (Action/Adventure/Strategy/Sports = top VN)
+    top_vn_genres = ["Action", "Adventure", "Strategy", "Sports"]
+    mid_vn_genres = ["Casual", "Simulation", "Puzzle", "RPG", "Roleplaying"]
+    if genre in top_vn_genres:
+        scores["5. Genre Fit"] = 10
+        notes["5. Genre Fit"] = f"✅ {genre} = top VN genre (best ranks #2-14)"
+    elif genre in mid_vn_genres:
+        scores["5. Genre Fit"] = 7
+        notes["5. Genre Fit"] = f"🟡 {genre} = mid VN genre (demand OK nhưng không top)"
+    else:
+        scores["5. Genre Fit"] = 4
+        notes["5. Genre Fit"] = f"⚠️ {genre} = niche ở VN"
+
+    # 6. Technical (VN = mostly mid-range phones)
+    if "Low" in tech_req:
+        scores["6. Hardware Fit"] = 10
+        notes["6. Hardware Fit"] = "✅ Low req — tiếp cận 90% thiết bị VN"
+    elif "Medium" in tech_req:
+        scores["6. Hardware Fit"] = 7
+        notes["6. Hardware Fit"] = "🟡 Medium — tiếp cận ~60% thiết bị VN"
+    elif "High" in tech_req:
+        scores["6. Hardware Fit"] = 4
+        notes["6. Hardware Fit"] = "⚠️ High — chỉ flagship, giới hạn reach VN"
+    else:
+        scores["6. Hardware Fit"] = 1
+        notes["6. Hardware Fit"] = "🔴 Flagship only — loại 90% thị trường VN"
+
+    # 7. Localization (VN publisher = auto-localized)
+    if has_vn_publisher in vn_pubs:
+        scores["7. Localization"] = 9
+        notes["7. Localization"] = "✅ VN publisher = localize tiếng Việt (VNG pattern)"
+    elif has_vn_publisher == "Self-publish":
+        scores["7. Localization"] = 5
+        notes["7. Localization"] = "⚠️ Cần tự dịch + QA tiếng Việt"
+    else:
+        scores["7. Localization"] = 3
+        notes["7. Localization"] = "🔴 Chưa có kế hoạch localize"
+
+    # 8. UA Economics (CPI vs LTV)
     if est_ltv > 0 and target_cpi > 0:
         roas = est_ltv / target_cpi
-        # ROAS > 1.5 = good, > 2.0 = great
-        roi_score = min(10, int(roas * 4))
+        if roas >= 2:
+            scores["8. UA Economics"] = 10
+            notes["8. UA Economics"] = f"✅ ROAS {roas:.1f}x — VN CPI thấp, LTV cao = profitable"
+        elif roas >= 1.2:
+            scores["8. UA Economics"] = 6
+            notes["8. UA Economics"] = f"🟡 ROAS {roas:.1f}x — marginal, cần optimize"
+        else:
+            scores["8. UA Economics"] = 2
+            notes["8. UA Economics"] = f"🔴 ROAS {roas:.1f}x — LTV < CPI, lỗ"
     else:
         roas = 0
-        roi_score = 0
-    scores["ROI / ROAS"] = roi_score
+        scores["8. UA Economics"] = 5
+        notes["8. UA Economics"] = "Chưa có CPI/LTV data — assume neutral"
 
-    # Retention potential
-    scores["Retention"] = min(10, target_d30_retention // 5)
+    # Weighted score
+    weights = {
+        "1. F2P Model": 0.15,
+        "2. VN Publisher": 0.25,
+        "3. Payment Gateway": 0.15,
+        "4. Multiplayer/Social": 0.10,
+        "5. Genre Fit": 0.10,
+        "6. Hardware Fit": 0.10,
+        "7. Localization": 0.10,
+        "8. UA Economics": 0.05,
+    }
+    # Veto: if F2P = 0 → cap total at 30%
+    f2p_vetoed = scores["1. F2P Model"] == 0
 
-    # Quality signal (reviews)
-    scores["Quality (reviews)"] = review_score // 10
+    weighted_total = sum(scores[k] * weights[k] for k in scores) * 10  # scale to 100
+    if f2p_vetoed:
+        weighted_total = min(weighted_total, 30)
 
-    # Scalability (platform)
-    scale_scores = {"Cross-platform": 10, "Mobile (iOS)": 7, "Mobile (Android)": 7,
-                    "PC (Steam)": 6}
-    scores["Scalability"] = scale_scores.get(platform, 5)
-
-    # Display scores as table
-    score_df = pd.DataFrame([
-        {"Dimension": dim, "Score": f"{sc}/10", "Raw": sc}
-        for dim, sc in scores.items()
-    ])
-    total_score = sum(scores.values())
-    max_score = len(scores) * 10
-    pct = total_score / max_score * 100
-
+    # Display
     col_s1, col_s2, col_s3 = st.columns(3)
-    col_s1.metric("Total Score", f"{total_score}/{max_score}")
-    col_s2.metric("Percentage", f"{pct:.0f}%")
-    # Recommendation
-    if pct >= 75:
+    col_s1.metric("Weighted Score", f"{weighted_total:.0f}/100")
+    col_s2.metric("ROAS", f"{roas:.2f}x" if roas > 0 else "N/A")
+
+    if f2p_vetoed:
+        rec, rec_color = "🔴 PASS (VETO: Paid game)", "red"
+    elif weighted_total >= 75:
         rec, rec_color = "🟢 PURSUE", "green"
-    elif pct >= 50:
+    elif weighted_total >= 50:
         rec, rec_color = "🟡 WATCH", "orange"
     else:
         rec, rec_color = "🔴 PASS", "red"
@@ -949,23 +1030,35 @@ elif page == PAGES[7]:
         unsafe_allow_html=True,
     )
 
-    # Bar chart of scores
+    # Score table with notes
+    score_data = []
+    for k in scores:
+        score_data.append({
+            "Factor": k,
+            "Score": f"{scores[k]}/10",
+            "Weight": f"{weights[k]*100:.0f}%",
+            "Weighted": f"{scores[k]*weights[k]*10:.1f}",
+            "Assessment": notes[k],
+        })
+    st.dataframe(pd.DataFrame(score_data), use_container_width=True, hide_index=True)
+
+    # Bar chart
     fig = px.bar(
-        score_df, x="Raw", y="Dimension", orientation="h",
-        range_x=[0, 10], title="Score by dimension",
-        color="Raw",
+        x=list(scores.values()), y=list(scores.keys()), orientation="h",
+        range_x=[0, 10], title="Score by factor (8 criteria)",
+        color=list(scores.values()),
         color_continuous_scale=["red", "yellow", "green"],
+        labels={"x": "Score (0-10)", "y": ""},
     )
     fig.update_layout(yaxis={"categoryorder": "total ascending"}, height=350)
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---- Competitor benchmark (từ DB thật) -----------------------------
+    # ---- Competitor benchmark (từ DB) -----------------------------
     st.divider()
     st.subheader("📊 Competitor Benchmark (từ DB)")
-    st.caption("So sánh game submission với competitors trong cùng genre — data thật từ Steam/iTunes/Gacha")
+    st.caption(f"So sánh với games cùng genre '{genre}' trong DB")
 
     with get_connection() as conn:
-        # Find games in same genre across sources
         bench_games = pd.read_sql_query(
             """
             SELECT g.name, g.genre, g.publisher_name, g.source, g.price_usd,
@@ -974,22 +1067,18 @@ elif page == PAGES[7]:
             LEFT JOIN fact_steam_playercounts f ON g.game_id = f.game_id
             WHERE g.genre LIKE ? AND g.source IN ('steam', 'itunes')
             GROUP BY g.game_id
-            ORDER BY f.peak_ccu DESC NULLS LAST
-            LIMIT 10
+            ORDER BY f.peak_ccu DESC NULLS LAST LIMIT 10
             """,
-            conn,
-            params=(f"%{genre}%",),
+            conn, params=(f"%{genre}%",),
         )
-        # Gacha competitors (revenue-based)
         gacha_bench = pd.read_sql_query(
             """
-            SELECT g.name, g.publisher, r.revenue_usd, r.snapshot_month, r.rank
+            SELECT g.name, g.publisher, r.revenue_usd, r.rank
             FROM fact_gacha_revenue r
             JOIN dim_gacha_game g ON r.game_id = g.game_id
             WHERE r.snapshot_month = (SELECT MAX(snapshot_month) FROM fact_gacha_revenue)
             ORDER BY r.revenue_usd DESC LIMIT 10
-            """,
-            conn,
+            """, conn,
         )
 
     col_b1, col_b2 = st.columns(2)
@@ -998,13 +1087,11 @@ elif page == PAGES[7]:
         if not bench_games.empty:
             display = bench_games[["name", "source", "publisher_name", "peak_ccu"]].copy()
             display["peak_ccu"] = display["peak_ccu"].apply(
-                lambda x: f"{x:,.0f}" if pd.notna(x) else "—"
-            )
+                lambda x: f"{x:,.0f}" if pd.notna(x) else "—")
             display.columns = ["Game", "Platform", "Publisher", "Peak CCU"]
             st.dataframe(display, use_container_width=True, hide_index=True)
         else:
             st.info(f"Không có game '{genre}' trong DB.")
-
     with col_b2:
         st.write("**💰 Top gacha revenue (latest month)**")
         if not gacha_bench.empty:
@@ -1016,38 +1103,24 @@ elif page == PAGES[7]:
         else:
             st.info("Chưa có gacha data.")
 
-    # Genre insights
-    if not bench_games.empty:
-        avg_ccu = bench_games["peak_ccu"].mean()
-        n_competitors = len(bench_games)
-        st.info(
-            f"📈 **Genre insight:** {n_competitors} games '{genre}' tracked. "
-            f"Avg peak CCU: {avg_ccu:,.0f}. "
-            f"{'Bão hòa — cần differentiation mạnh.' if n_competitors > 8 else 'Còn room — cơ hội tốt.'}"
-        )
-
     # ---- ROAS projection ----------------------------------------------
     st.divider()
     st.subheader("💰 ROAS Projection")
     if roas > 0:
-        # Payback period (số user cần acquire để cover deal cost)
-        users_needed = int(deal_cost / max(est_ltv - target_cpi, 0.01))
-        # Simple projection: assume X users/month
         col_r1, col_r2, col_r3 = st.columns(3)
-        col_r1.metric("ROAS ratio (LTV/CPI)", f"{roas:.2f}x",
+        col_r1.metric("ROAS (LTV/CPI)", f"{roas:.2f}x",
                       delta="✅ profitable" if roas > 1 else "❌ loss")
-        col_r2.metric("Users needed to break even", f"{users_needed:,}")
-        col_r3.metric("Margin per user", f"${est_ltv - target_cpi:.2f}")
-
-        # Sensitivity: vary CPI
-        st.write("**Sensitivity analysis (varying CPI):**")
+        deal_cost = st.session_state.get("deal_cost", 50000)
+        users_needed = int(deal_cost / max(est_ltv - target_cpi, 0.01))
+        col_r2.metric("Users to break even", f"{users_needed:,}")
+        col_r3.metric("Margin/user", f"${est_ltv - target_cpi:.2f}")
+        st.write("**Sensitivity (varying CPI):**")
         cpi_range = [target_cpi * f for f in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]]
         sens_data = []
         for cpi in cpi_range:
             roas_sens = est_ltv / cpi if cpi > 0 else 0
             sens_data.append({
-                "CPI": f"${cpi:.2f}",
-                "ROAS": f"{roas_sens:.2f}x",
+                "CPI": f"${cpi:.2f}", "ROAS": f"{roas_sens:.2f}x",
                 "Profitable": "✅" if roas_sens > 1 else "❌",
             })
         st.dataframe(pd.DataFrame(sens_data), use_container_width=True, hide_index=True)
