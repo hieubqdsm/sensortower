@@ -39,6 +39,12 @@ logger.add(
     retention="30 days",
 )
 
+# Project root (resolve từ file này: scripts/serve_pipeline.py → parent.parent)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Python binary: ưu tiên venv, fallback sys.executable (python đang chạy scheduler)
+VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
+PYTHON_BIN = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
+
 
 def _run(cmd_desc: str, cmd: list[str]) -> None:
     """Run 1 command, log result."""
@@ -112,7 +118,7 @@ def main(once: bool, dry_run: bool):
             last_run["steam"] = slot
             if not dry_run:
                 _run("Steam crawl", [
-                    str(Path(sys.path[0]).parent / ".venv" / "bin" / "python"),
+                    PYTHON_BIN,
                     "scripts/run_daily.py", "--source", "steam",
                 ])
 
@@ -121,7 +127,7 @@ def main(once: bool, dry_run: bool):
             last_run["itunes"] = slot
             if not dry_run:
                 _run("iTunes crawl", [
-                    str(Path(sys.path[0]).parent / ".venv" / "bin" / "python"),
+                    PYTHON_BIN,
                     "scripts/run_daily.py", "--source", "itunes",
                 ])
 
@@ -130,7 +136,7 @@ def main(once: bool, dry_run: bool):
             last_run["news"] = slot
             if not dry_run:
                 _run("News crawl", [
-                    str(Path(sys.path[0]).parent / ".venv" / "bin" / "python"),
+                    PYTHON_BIN,
                     "scripts/run_news.py",
                 ])
 
