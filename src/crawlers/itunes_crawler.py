@@ -58,7 +58,7 @@ class ITunesCrawler(BaseCrawler):
         super().__init__("itunes")
         self.countries = countries or DEFAULT_COUNTRIES
         self.chart_types = chart_types or DEFAULT_CHARTS
-        self.rss_url = "https://rss.marketingtools.apple.com/api/v2/{country}/apps/{chart}/{count}/apps.json"
+        self.rss_url = "https://rss.applemarketingtools.com/api/v2/{country}/apps/{chart}/{count}/apps.json"
         self.search_url = "https://itunes.apple.com/search"
         self.lookup_url = "https://itunes.apple.com/lookup"
 
@@ -169,54 +169,42 @@ class ITunesCrawler(BaseCrawler):
             f"charts={self.chart_types}, target={max_items}"
         )
 
-        # ---- Pass 1: Search API → populate dim_game với games thật --------
+        # ---- Pass 1: Search API → populate dim_game + ranking facts --------
+        # Search API trả games theo popularity order (genre-filtered = 6014/Games).
+        # Dùng position trong result làm RANK (1-based) → reliable, không cần RSS.
         games_seen: set[str] = set()
+        rankings_ok = 0
         for country in self.countries:
             games = self.fetch_top_games(country, limit=max_items)
-            for g in games:
+            for rank_idx, g in enumerate(games, start=1):
                 app_id = str(g.get("trackId"))
                 if not app_id or app_id in games_seen:
                     continue
                 gid = self.upsert_game_from_search(g, country, today)
                 if gid:
                     games_seen.add(app_id)
+                    # Insert ranking fact (rank = position trong Search results)
+                    # Chart name = "top-games" vì Search đã filter genre=Games
+                    self.upsert_ranking_fact(
+                        game_id=gid,
+                        snapshot_date=today,
+                        country=country.upper(),
+                        chart_name="top-games",
+                        rank=rank_idx,
+                    )
+                    rankings_ok += 1
             logger.info(f"[itunes] {country}: {len(games_seen)} unique games so far")
 
-        # ---- Pass 2: RSS → ranking facts (overall, có thể có non-game) ----
-        rankings_ok = 0
+        # ---- Pass 2 (optional): RSS → lưu raw chart để audit (không insert ranking) ----
+        # Lý do skip RSS cho ranking: RSS chỉ có overall top apps (không filter games),
+        # và phải lookup từng app → chậm + hầu hết non-game. Search API đã đủ.
         for country in self.countries:
             for chart in self.chart_types:
-                apps = self.fetch_top_chart(country, chart, count=max_items)
-                self.save_raw(f"chart_{country}_{chart}", apps, today)
-
-                for rank_idx, app in enumerate(apps, start=1):
-                    app_id = app.get("id")
-                    if not app_id:
-                        continue
-                    app_id_str = str(app_id)
-
-                    # Nếu app này đã có trong dim_game (từ Search), insert ranking
-                    # Nếu chưa có → lookup để check có phải game không
-                    if app_id_str not in games_seen:
-                        detail = self.lookup_app(app_id_str)
-                        if detail and detail.get("primaryGenreName") == "Games":
-                            gid = self.upsert_game_from_search(detail, country, today)
-                            if gid:
-                                games_seen.add(app_id_str)
-                        else:
-                            # Non-game app → skip (chỉ track games cho ranking)
-                            continue
-
-                    game_id = self._get_game_id(app_id_str)
-                    if game_id:
-                        self.upsert_ranking_fact(
-                            game_id=game_id,
-                            snapshot_date=today,
-                            country=country,
-                            chart_name=f"{chart}_games",
-                            rank=rank_idx,
-                        )
-                        rankings_ok += 1
+                try:
+                    apps = self.fetch_top_chart(country, chart, count=max_items)
+                    self.save_raw(f"chart_{country}_{chart}", apps, today)
+                except Exception as e:
+                    logger.warning(f"[itunes] RSS {country}/{chart} save failed: {e}")
 
         logger.success(
             f"[itunes] DONE: {len(games_seen)} unique games, {rankings_ok} rankings"

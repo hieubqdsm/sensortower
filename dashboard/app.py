@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 # Ensure project root on sys.path (khi chạy từ dashboard/ folder)
@@ -109,6 +110,7 @@ PAGES = [
     "📊 Portfolio Overview",
     "📰 Daily News",
     "🏆 Rankings & Trends",
+    "🎮 Steam CCU",
     "🎭 Genre & Publisher",
     "📈 Genre Trends",
     "🔍 Game Detail",
@@ -376,7 +378,6 @@ elif page == PAGES[2]:
         if sel_games_traj:
             traj = df[df["name"].isin(sel_games_traj)].copy()
             traj = traj.sort_values("snapshot_date")
-            import plotly.express as px
             fig = px.line(
                 traj, x="snapshot_date", y="rank", color="name",
                 markers=True, title="Rank over time (lower = better)",
@@ -390,9 +391,136 @@ elif page == PAGES[2]:
 
 
 # =========================================================================
-# PAGE 4: GENRE & PUBLISHER
+# PAGE 3.5: 🎮 STEAM CCU RANKINGS
 # =========================================================================
 elif page == PAGES[3]:
+    st.title("🎮 Steam CCU Rankings")
+    st.caption("Top 100 Steam games by concurrent players — hourly snapshot via Steam Web API")
+
+    steam_df = load_fact_steam()
+    games_df = load_dim_game()
+
+    if steam_df.empty:
+        st.warning(
+            "❌ Chưa có Steam data. Cần:\n"
+            "1. `STEAM_API_KEY` trong `.env` (đăng ký: steamcommunity.com/dev/apikey)\n"
+            "2. Chạy: `python scripts/run_daily.py --source steam`\n"
+            "3. Cron đã setup hourly — đợi vài giờ để có history"
+        )
+        st.stop()
+
+    # Join game metadata
+    df = steam_df.merge(
+        games_df[["game_id", "name", "genre", "publisher_name", "developer_name", "price_usd"]],
+        on="game_id", how="left",
+    )
+
+    # Latest snapshot
+    latest_date = df["snapshot_date"].max()
+    latest = df[df["snapshot_date"] == latest_date].copy()
+    n_dates = df["snapshot_date"].nunique()
+
+    # KPIs
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Games tracked", latest["game_id"].nunique())
+    col2.metric("Total CCU (now)", f"{latest['peak_ccu'].sum():,}")
+    col3.metric("Snapshots", n_dates)
+    col4.metric("Latest snapshot", str(latest_date))
+
+    st.divider()
+
+    # Filter by publisher (optional)
+    colf1, colf2 = st.columns(2)
+    with colf1:
+        top_n = st.slider("Top N games", 10, 100, 25, step=5)
+    with colf2:
+        publishers = ["All"] + sorted(
+            p for p in latest["publisher_name"].dropna().unique() if p
+        )
+        sel_pub = st.selectbox("Filter by publisher", publishers)
+
+    filtered = latest.copy()
+    if sel_pub != "All":
+        filtered = filtered[filtered["publisher_name"] == sel_pub]
+    filtered = filtered.nlargest(top_n, "peak_ccu")
+
+    # === Top N leaderboard ===
+    st.subheader(f"🏆 Top {len(filtered)} by CCU — {latest_date}")
+    display = filtered.copy()
+    # Sentiment %
+    display["sentiment_%"] = (
+        display["positive_reviews"] /
+        (display["positive_reviews"] + display["negative_reviews"]) * 100
+    ).round(1)
+    display["sentiment"] = display["sentiment_%"].apply(
+        lambda x: f"{x:.0f}%" if x == x else "—"
+    )
+    display = display[[
+        "name", "peak_ccu", "publisher_name", "genre", "price_usd",
+        "positive_reviews", "negative_reviews", "sentiment",
+    ]].copy()
+    display.columns = [
+        "Game", "Peak CCU", "Publisher", "Genre", "Price ($)",
+        "Reviews +", "Reviews −", "Sentiment",
+    ]
+    st.dataframe(display, use_container_width=True, hide_index=True, height=450)
+
+    st.divider()
+
+    # === CCU trajectory (line chart — cần ≥2 snapshots) ===
+    st.subheader("📈 CCU Trajectory")
+    if n_dates >= 2:
+        sel_traj = st.multiselect(
+            "🎮 Games so sánh trajectory",
+            sorted(latest.nlargest(15, "peak_ccu")["name"].dropna().unique()),
+            max_selections=10,
+        )
+        if sel_traj:
+            traj = df[df["name"].isin(sel_traj)].copy()
+            traj = traj.sort_values(["name", "snapshot_date"])
+            fig = px.line(
+                traj, x="snapshot_date", y="peak_ccu", color="name",
+                markers=True, title="CCU over time (hourly snapshots)",
+                labels={"peak_ccu": "Peak Concurrent Players", "snapshot_date": "Date"},
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Chọn ít nhất 1 game để xem trajectory.")
+    else:
+        st.info(
+            f"⏳ Hiện chỉ có {n_dates} snapshot. Cron hourly sẽ tự thêm data — "
+            f"vài giờ nữa quay lại sẽ có line chart CCU trajectory."
+        )
+        st.caption(
+            "Pipeline: cron `0 * * * *` chạy Steam crawler mỗi giờ → "
+            "`fact_steam_playercounts` thêm 1 row/game/hour → line chart tự render."
+        )
+
+    st.divider()
+
+    # === Publisher market share (CCU) ===
+    st.subheader("📊 Publisher Market Share (by CCU)")
+    pub_share = (
+        latest.groupby("publisher_name")["peak_ccu"].sum()
+        .reset_index()
+        .sort_values("peak_ccu", ascending=False)
+    )
+    # Top 10 + Other
+    top10 = pub_share.head(10).copy()
+    other_ccu = pub_share.iloc[10:]["peak_ccu"].sum()
+    if other_ccu > 0:
+        top10 = pd.concat([top10, pd.DataFrame([{"publisher_name": "Other", "peak_ccu": other_ccu}])])
+    fig_pie = px.pie(
+        top10, values="peak_ccu", names="publisher_name",
+        title=f"CCU share by publisher — {latest_date}",
+    )
+    st.plotly_chart(fig_pie, use_container_width=True)
+
+
+# =========================================================================
+# PAGE 4: GENRE & PUBLISHER
+# =========================================================================
+elif page == PAGES[4]:
     st.title("🎭 Genre & Publisher Analysis")
     st.caption("Phân tích market share theo thể loại và publisher")
 
@@ -459,7 +587,7 @@ elif page == PAGES[3]:
 # =========================================================================
 # PAGE 5: GAME DETAIL
 # =========================================================================
-elif page == PAGES[4]:
+elif page == PAGES[6]:
     st.title("🔍 Game Detail")
     st.caption("Deep dive vào 1 game cụ thể")
 
@@ -663,7 +791,7 @@ elif page == PAGES[5]:
 # =========================================================================
 # PAGE 7: DEAL EVALUATION (game scorecard + ROAS calculator)
 # =========================================================================
-elif page == PAGES[6]:
+elif page == PAGES[7]:
     st.title("💼 Deal Evaluation")
     st.caption("Scorecard + ROAS calculator cho game publishing deals")
 
@@ -802,7 +930,7 @@ elif page == PAGES[6]:
 # =========================================================================
 # PAGE 8: 💰 Gacha Revenue
 # =========================================================================
-elif page == PAGES[7]:
+elif page == PAGES[8]:
     st.title("💰 Gacha Revenue Tracker")
     st.caption(
         "Top 50 mobile gacha revenue hàng tháng — OCR từ r/gachagaming monthly reports. "
@@ -839,6 +967,7 @@ elif page == PAGES[7]:
         col2.metric("Games tracked", gacha["game_id"].nunique())
         col3.metric("Total facts", len(gacha))
         latest_month = gacha["snapshot_month"].max()
+        n_months = gacha["snapshot_month"].nunique()
         latest_total = gacha[gacha["snapshot_month"] == latest_month]["revenue_usd"].sum()
         col4.metric(f"Revenue ({latest_month})",
                     f"${latest_total/1e6:.1f}M")
@@ -902,6 +1031,60 @@ elif page == PAGES[7]:
         st.caption(
             f"💡 Data parsed từ HTML table (source: {gacha['source'].iloc[0]}). "
             f"Revenue = mobile estimates (PC/console excluded)."
+        )
+
+        st.divider()
+        # === Total Revenue by Game (all months tracked) ===
+        st.subheader("💰 Total Revenue by Game (all months)")
+        st.caption(
+            f"Tổng revenue mỗi game từ {gacha['snapshot_month'].min()} → "
+            f"{gacha['snapshot_month'].max()} ({n_months} tháng)"
+        )
+        totals = (
+            gacha.groupby(["game", "scope"], as_index=False)
+            .agg(
+                total_revenue_usd=("revenue_usd", "sum"),
+                months_tracked=("snapshot_month", "nunique"),
+                avg_monthly=("revenue_usd", "mean"),
+                best_month_revenue=("revenue_usd", "max"),
+            )
+            .sort_values("total_revenue_usd", ascending=False)
+        )
+        # Filter scope (optional)
+        scopes = ["All"] + sorted(totals["scope"].dropna().unique())
+        sel_scope_total = st.selectbox(
+            "Filter by scope", scopes, key="gacha_total_scope"
+        )
+        totals_view = totals.copy()
+        if sel_scope_total != "All":
+            totals_view = totals_view[totals_view["scope"] == sel_scope_total]
+
+        # Top N slider
+        top_total = st.slider(
+            "Top N games (total revenue)", 10, 100, 25, step=5, key="gacha_total_top"
+        )
+        totals_view = totals_view.head(top_total)
+
+        # Bar chart
+        fig_total = px.bar(
+            totals_view, x="total_revenue_usd", y="game", orientation="h",
+            labels={"total_revenue_usd": "Total Revenue (USD)", "game": ""},
+            title=f"Top {len(totals_view)} Games — Cumulative Revenue ({n_months} months)",
+        )
+        fig_total.update_yaxes(autorange="reversed")
+        st.plotly_chart(fig_total, use_container_width=True)
+
+        # Table with full detail
+        table = totals_view.copy()
+        table["Total Rev"] = table["total_revenue_usd"].apply(lambda x: f"${x/1e6:.1f}M")
+        table["Avg Monthly"] = table["avg_monthly"].apply(lambda x: f"${x/1e6:.1f}M")
+        table["Best Month"] = table["best_month_revenue"].apply(lambda x: f"${x/1e6:.1f}M")
+        table = table[["game", "scope", "Total Rev", "months_tracked", "Avg Monthly", "Best Month"]]
+        table.columns = ["Game", "Scope", "Total Revenue", "Months", "Avg/Month", "Best Month"]
+        st.dataframe(table, use_container_width=True, hide_index=True)
+        st.caption(
+            f"💡 Tổng revenue {n_months} tháng: ${totals_view['total_revenue_usd'].sum()/1e6:.0f}M. "
+            f"Avg/Month = tổng chia số tháng track được (games mới ra sẽ ít tháng hơn)."
         )
 
 

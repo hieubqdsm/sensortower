@@ -7,8 +7,9 @@ steam:
   name: "Steam Web API"
   base_url: "https://api.steampowered.com"
   store_url: "https://store.steampowered.com/api"   # Undocumented store endpoints
-  # Steam policy: ~200 req / 5 min (recommend conservative 1 req/200ms)
-  rate_limit_ms: 200
+  # Steam policy: ~200 req / 5 min (per key). Conservative 500ms gap = 120 req/min max.
+  # Hourly crawl (~250 req) dùng ~3.5% capacity → an toàn, không lo 429.
+  rate_limit_ms: 500
   max_retries: 3
   backoff_seconds: 2
   needs_auth: true
