@@ -94,7 +94,12 @@ class ITunesCrawler(BaseCrawler):
             return None
         raw_path = self.save_raw(f"game_{country}_{app_id}", game, today)
         genres = game.get("genres") or []
-        primary_genre = game.get("primaryGenreName") or (genres[0] if genres else "Games")
+        # Pick sub-genre (skip generic "Games"/"Entertainment" parents) for detail
+        primary_genre = (
+            game.get("primaryGenreName")
+            or next((g for g in genres if g and g not in ("Games", "Entertainment")), None)
+            or (genres[0] if genres else "Games")
+        )
         price = game.get("price") or 0.0
 
         return self.upsert_game(

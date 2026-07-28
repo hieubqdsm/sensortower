@@ -206,6 +206,7 @@ with get_connection() as conn:
 | `scripts/serve_api.py` | Chạy FastAPI server (serve data cho Power BI) |
 | `scripts/serve_pipeline.py` | Scheduler tự crawl theo giờ (Steam + iTunes + News) |
 | `scripts/export_csv.py` | Export SQLite → CSV (Power BI / Excel / cloud sync) |
+| `scripts/enrich_genres.py` | Enrich sub-genre cho iTunes/Steam games (lookup API, one-time) |
 | `scripts/manual/parse_gacha_html.py` | Parse HTML gacha revenue table → SQLite (monthly) |
 | `scripts/manual/load_gacha_revenue.py` | Fallback CSV loader cho gacha revenue |
 | `scripts/manual/` | Slot cho Sensor Tower data save-tay (xem README) |
