@@ -307,17 +307,38 @@ elif page == PAGES[1]:
             fig.update_layout(height=300, xaxis_title="", yaxis_title="items")
             st.plotly_chart(fig, use_container_width=True)
 
-    # News list (cherry-picked display)
+    # News list (cherry-picked display) với pagination
     st.divider()
-    st.subheader(f"📋 News feed ({len(filtered)} items)")
+    PAGE_SIZE = 15
+    total_items = len(filtered)
+    n_pages = max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE)
+
+    st.subheader(f"📋 News feed ({total_items} items)")
 
     # Sort by date (newest first) then by score
     display_cols = ["published_at", "source_name", "title", "keywords", "score", "url"]
     display_df = filtered[display_cols].copy() if not filtered.empty else filtered
-    display_df["published_at"] = pd.to_datetime(display_df["published_at"]).dt.strftime("%H:%M")
+    display_df["published_at"] = pd.to_datetime(display_df["published_at"]).dt.strftime("%m-%d %H:%M")
+
+    # Pagination controls
+    if n_pages > 1:
+        col_pg1, col_pg2, col_pg3 = st.columns([1, 2, 1])
+        with col_pg2:
+            page_num = st.number_input(
+                "Page", min_value=1, max_value=n_pages, value=1, step=1,
+                label_visibility="collapsed",
+            )
+        col_pg1.write(f"Page {page_num} / {n_pages}")
+        col_pg3.write(f"{(page_num-1)*PAGE_SIZE+1}-{min(page_num*PAGE_SIZE, total_items)} of {total_items}")
+    else:
+        page_num = 1
+
+    start_idx = (page_num - 1) * PAGE_SIZE
+    end_idx = start_idx + PAGE_SIZE
+    page_df = display_df.iloc[start_idx:end_idx]
 
     # Render as clickable links
-    for _, row in display_df.head(50).iterrows():
+    for _, row in page_df.iterrows():
         title = row["title"]
         url = row["url"]
         src = row["source_name"]
