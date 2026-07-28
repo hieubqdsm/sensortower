@@ -185,23 +185,53 @@ class NewsCrawler(BaseCrawler):
         return None
 
     def _detect_keywords(self, text: str) -> str:
-        """Detect business-relevant keywords trong text."""
+        """Detect business-relevant keywords trong text (BI deal signals)."""
         if not text:
             return ""
         text_lower = text.lower()
         keywords = []
-        # Map: (keyword_list, tag)
+        # Map: (keyword_list, tag) — mở rộng để match news thực tế
         keyword_map = [
-            (["launch", "release", "out now", "debut"], "launch"),
-            (["update", "patch", "patch notes", "hotfix", "v1.", "v2."], "update"),
-            (["shutdown", "sunset", "end of service", "closing"], "shutdown"),
-            (["layoff", "layoffs", "job cut", "fired", "restructuring"], "layoffs"),
-            (["acquire", "acquisition", "buys", "bought by", "merger"], "acquisition"),
-            (["funding", "raise", "series a", "series b", "investment"], "funding"),
-            (["dlc", "expansion", "season pass"], "dlc"),
-            (["mobile", "ios", "android", "app store"], "mobile"),
-            (["esport", "tournament", "championship"], "esport"),
-            (["review", "hands-on", "preview"], "review"),
+            # === Deal signals (ưu tiên cho BI Analyst) ===
+            (["acquire", "acquisition", "buys", "bought by", "merger", "purchase of",
+              "takeover", "deal to buy", "agreed to acquire"], "acquisition"),
+            (["funding", "raise", "raised", "raises", "series a", "series b", "series c",
+              "investment", "invests", "venture", "secured funding", "million round"], "funding"),
+            (["partner", "partnership", "collaboration", "team up", "joint venture",
+              "publishing deal", "publishing agreement"], "partnership"),
+            # === Company health ===
+            (["layoff", "layoffs", "job cut", "job cuts", "fired", "restructuring",
+              "cut jobs", "let go", "downsizing", "reduce headcount"], "layoffs"),
+            (["shutdown", "sunset", "end of service", "closing", "close down",
+              "shut down", "discontinue", "delist", "delisting", "eos", "end-of-service"], "shutdown"),
+            (["leaves", "leaving", "resign", "resigns", "resigned", "steps down",
+              "depart", "departs", "departure", "former", "exit", "quits"], "departure"),
+            # === Product ===
+            (["launch", "launches", "release", "releases", "released", "out now",
+              "debut", "debuts", "arrives", "coming to", "available now", "goes live"], "launch"),
+            (["update", "updates", "patch", "patches", "patch notes", "hotfix",
+              "v1.", "v2.", "version", "new content", "content update"], "update"),
+            (["dlc", "expansion", "season pass", "battle pass", "new season",
+              "season 1", "season 2", "chapter"], "dlc"),
+            (["beta", "open beta", "closed beta", "early access", "playtest"], "beta"),
+            # === Industry / strategy ===
+            (["subscription", "game pass", "xbox game pass", "ps plus", "premium",
+              "free-to-play", "f2p", "freemium"], "business-model"),
+            (["free", "free copies", "free pc", "giveaway", "freebie", "free game"], "promotion"),
+            (["mobile", "ios", "iphone", "ipad", "android", "app store",
+              "google play", "mobile game"], "mobile"),
+            (["pc", "steam", "epic games", "gog", "pc game"], "pc"),
+            (["console", "playstation", "ps5", "ps4", "xbox", "nintendo", "switch"], "console"),
+            (["esport", "esports", "tournament", "championship", "competitive",
+              "prize pool", "world championship"], "esport"),
+            (["review", "reviews", "hands-on", "preview", "score", "rating",
+              "out of 10", "verdict"], "review"),
+            (["ai", "artificial intelligence", "machine learning", "genai",
+              "llm", "gpt", "claude", "openai", "generative"], "ai"),
+            (["unreal", "unity", "game engine", "engine", "game dev", "game developer",
+              "indie dev", "indie game"], "dev"),
+            (["malware", "hack", "hacked", "breach", "leak", "leaked", "vulnerab",
+              "security", "ransomware"], "security"),
         ]
         for kws, tag in keyword_map:
             if any(kw in text_lower for kw in kws):
