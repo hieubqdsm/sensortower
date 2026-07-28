@@ -76,6 +76,24 @@ FLAT_QUERIES: dict[str, str] = {
         JOIN dim_news_source s ON n.source_id = s.source_id
         ORDER BY n.published_at DESC
     """,
+    "steam_flat": """
+        SELECT g.game_id, g.name, g.genre, g.platform, g.release_date,
+               g.price_usd, g.publisher_name, g.developer_name, g.description,
+               f.snapshot_date, f.peak_ccu, f.positive_reviews, f.negative_reviews
+        FROM fact_steam_playercounts f
+        JOIN dim_game g ON f.game_id = g.game_id
+        WHERE g.source = 'steam'
+        ORDER BY f.snapshot_date DESC, f.peak_ccu DESC
+    """,
+    "itunes_flat": """
+        SELECT g.game_id, g.name, g.genre, g.platform, g.release_date,
+               g.price_usd, g.publisher_name, g.developer_name,
+               r.snapshot_date, r.country, r.chart_name, r.rank
+        FROM fact_itunes_rankings r
+        JOIN dim_game g ON r.game_id = g.game_id
+        WHERE g.source = 'itunes'
+        ORDER BY r.snapshot_date DESC, r.country, r.rank
+    """,
     "dim_date": "SELECT * FROM dim_date ORDER BY date",
 }
 

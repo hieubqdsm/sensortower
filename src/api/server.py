@@ -20,14 +20,15 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import APIKeyHeader
 
-from config import API_KEY, SQLITE_PATH
+from config import API_KEY, PROCESSED_DIR, SQLITE_PATH
 from src.storage.db import get_connection
 
 
@@ -110,9 +111,83 @@ def root() -> dict:
         "endpoints": [
             "/api/health", "/api/tables", "/api/tables/{name}",
             "/api/gacha/revenue", "/api/news", "/api/stats/summary",
+            "/downloads (browse CSV files)", "/downloads/{filename} (download CSV)",
         ],
         "auth": "X-API-Key header required (see .env API_KEY)" if API_KEY else "dev mode (no key)",
     }
+
+
+# ---- CSV Downloads (browser-friendly, cho Power BI / Excel) ----------------
+
+# Các file CSV an toàn cho public download (chỉ flat views + dim_date)
+DOWNLOADABLE_CSVS = {
+    "gacha_flat.csv", "steam_flat.csv", "itunes_flat.csv",
+    "news_flat.csv", "dim_date.csv",
+}
+
+
+@app.get("/downloads", response_class=HTMLResponse)
+def downloads_index() -> HTMLResponse:
+    """Trang HTML list CSV files để download qua browser (không cần auth)."""
+    rows_html = []
+    for name in sorted(DOWNLOADABLE_CSVS):
+        path = PROCESSED_DIR / name
+        if path.exists():
+            size_kb = path.stat().st_size / 1024
+            rows_html.append(
+                f'<tr><td><a href="/downloads/{name}">📊 {name}</a></td>'
+                f'<td>{size_kb:.1f} KB</td>'
+                f'<td><a href="/downloads/{name}" class="btn">⬇ Download</a></td></tr>'
+            )
+        else:
+            rows_html.append(f'<tr><td>⏳ {name}</td><td>(chưa export)</td><td>—</td></tr>')
+    return HTMLResponse(f"""
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Game BI — CSV Downloads</title>
+<style>
+  body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }}
+  h1 {{ color: #333; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+  th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+  th {{ background: #f5f5f5; }}
+  a {{ color: #0066cc; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  .btn {{ background: #0066cc; color: white; padding: 6px 16px; border-radius: 4px; }}
+  .btn:hover {{ background: #004499; }}
+  .note {{ background: #fff3cd; padding: 12px; border-radius: 4px; margin: 20px 0; font-size: 14px; }}
+</style></head>
+<body>
+<h1>🎮 Game BI — CSV Downloads</h1>
+<p>Tải CSV files để load vào Power BI / Excel.</p>
+<div class="note">
+  💡 <b>Power BI:</b> Get Data → CSV → paste URL hoặc tải file về máy trước.<br>
+  💡 <b>API access</b> (real-time): xem <code>/docs</code> — cần header <code>X-API-Key</code>.
+</div>
+<table>
+  <thead><tr><th>File</th><th>Size</th><th>Action</th></tr></thead>
+  <tbody>
+    {''.join(rows_html)}
+  </tbody>
+</table>
+<hr>
+<p><small>Refresh CSV: <code>python scripts/export_csv.py --flat</code> trên server.</small></p>
+</body></html>
+    """)
+
+
+@app.get("/downloads/{filename}")
+def download_csv(filename: str):
+    """Download 1 CSV file (browser download, không cần auth)."""
+    if filename not in DOWNLOADABLE_CSVS:
+        raise HTTPException(404, f"File '{filename}' không hợp lệ. Xem /downloads.")
+    path = PROCESSED_DIR / filename
+    if not path.exists():
+        raise HTTPException(404, f"File '{filename}' chưa export. Chạy: python scripts/export_csv.py --flat")
+    return FileResponse(
+        path=str(path),
+        media_type="text/csv",
+        filename=filename,
+    )
 
 
 @app.get("/api/health", tags=["monitoring"])
