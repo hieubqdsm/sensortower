@@ -222,4 +222,97 @@ class SteamCrawler(BaseCrawler):
             facts_ok += 1
 
         logger.success(f"[steam] DONE: {games_ok} games, {facts_ok} facts")
+
+        # Crawl watchlist games (specific games, có thể ko lọt top 100)
+        try:
+            wl_stats = self.crawl_watchlist()
+            facts_ok += wl_stats.get("watchlist_crawled", 0)
+        except Exception as e:
+            logger.warning(f"[steam] watchlist crawl failed: {e}")
+
         return {"games_crawled": games_ok, "facts_inserted": facts_ok}
+
+    # ---- Watchlist: track specific games (không cần top 100) -----------
+    def crawl_watchlist(self, watchlist_path=None) -> dict[str, int]:
+        """
+        Crawl CCU + reviews cho games trong watchlist file.
+        Watchlist format: mỗi dòng = appid hoặc appid,name
+        """
+        from config import PROJECT_ROOT
+        if watchlist_path is None:
+            watchlist_path = PROJECT_ROOT / "config" / "steam_watchlist.txt"
+
+        if not watchlist_path.exists():
+            logger.info("[steam] watchlist file không tồn tại — skip")
+            return {"watchlist_crawled": 0}
+
+        # Parse watchlist
+        appids = []
+        for line in watchlist_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            appid_str = line.split(",")[0].strip()
+            name_hint = line.split(",", 1)[1].strip() if "," in line else None
+            if appid_str.isdigit():
+                appids.append((int(appid_str), name_hint))
+
+        if not appids:
+            logger.info("[steam] watchlist trống — skip")
+            return {"watchlist_crawled": 0}
+
+        logger.info(f"[steam] crawling {len(appids)} watchlist games")
+        today = date.today().isoformat()
+        facts_ok = 0
+
+        for appid, name_hint in appids:
+            # Check if already crawled today (top 100 might include it)
+            with get_connection() as conn:
+                existing = conn.execute(
+                    "SELECT 1 FROM fact_steam_playercounts WHERE game_id IN "
+                    "(SELECT game_id FROM dim_game WHERE source='steam' AND source_app_id=?) "
+                    "AND snapshot_date=?",
+                    (str(appid), today),
+                ).fetchone()
+            if existing:
+                logger.debug(f"[steam] watchlist {appid} already crawled today — skip")
+                continue
+
+            # Fetch details + CCU + reviews
+            details = self.fetch_app_details(appid)
+            if details:
+                name = name_hint or details.get("name", f"SteamApp_{appid}")
+                genres = [g.get("description", "") for g in details.get("genres", []) if g.get("description")]
+                genre = genres[0] if genres else None
+                raw_path = self.save_raw(f"watchlist_{appid}", details, today)
+                game_id = self.upsert_game(
+                    source_app_id=str(appid), name=name, genre=genre,
+                    platform="pc", price_usd=details.get("price_overview", {}).get("final", 0) / 100,
+                    publisher_name=details.get("publishers", [None])[0] if details.get("publishers") else None,
+                    developer_name=details.get("developers", [None])[0] if details.get("developers") else None,
+                    release_date=details.get("release_date", {}).get("date", ""),
+                    raw_payload_path=str(raw_path),
+                )
+            else:
+                # Fallback: upsert với name_hint only
+                game_id = self.upsert_game(
+                    source_app_id=str(appid),
+                    name=name_hint or f"SteamApp_{appid}",
+                    platform="pc",
+                )
+
+            # Reviews + CCU
+            reviews = self.fetch_review_summary(appid)
+            peak_ccu = self.fetch_current_ccu(appid) or 0
+
+            self.upsert_playercount_fact(
+                game_id=game_id, snapshot_date=today,
+                peak_ccu=int(peak_ccu),
+                positive=reviews["positive"], negative=reviews["negative"],
+            )
+            self.insert_hourly_ccu(game_id, int(peak_ccu))
+            facts_ok += 1
+            logger.info(f"[steam] watchlist: {name_hint or appid} → {peak_ccu:,} CCU")
+
+        logger.success(f"[steam] watchlist DONE: {facts_ok} games crawled")
+        return {"watchlist_crawled": facts_ok}

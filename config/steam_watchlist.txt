@@ -1,0 +1,13 @@
+# ============================================================
+# Steam Watchlist — track specific games (không cần lọt top 100)
+# ============================================================
+# Mỗi dòng 1 game. Format: appid hoặc appid,name
+# Tìm appid: https://store.steampowered.com/app/<appid>/
+# Lines bắt đầu bằng # = comment (bỏ qua)
+# ============================================================
+
+3513350,Wuthering Waves
+2358720,Infinity Nikki
+4162040,Zenless Zone Zero
+1623730,Palworld
+3440070,Dinoblade
