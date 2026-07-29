@@ -381,12 +381,11 @@ elif page == PAGES[1]:
         kw = row["keywords"]
         score = row["score"]
 
-        kw_html = f" `<span style='color:#888'>[{kw}]</span>`" if kw else ""
+        kw_html = f" *`{kw}`*" if kw else ""
         score_html = f" ⬆{score}" if pd.notna(score) and score else ""
 
         st.markdown(
             f"**[{time_str}]** `[{src}]` [{title}]({url}){kw_html}{score_html}",
-            unsafe_allow_html=True,
         )
 
 
