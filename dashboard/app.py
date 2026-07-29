@@ -328,7 +328,8 @@ elif page == PAGES[1]:
     st.subheader(f"📋 News feed ({total_items} items)")
 
     # Sort by date (newest first) then by score
-    display_cols = ["published_at", "source_name", "title", "keywords", "score", "url"]
+    display_cols = ["published_at", "source_name", "title", "summary", "author",
+                    "keywords", "score", "url"]
     display_df = filtered[display_cols].copy() if not filtered.empty else filtered
     display_df["published_at"] = pd.to_datetime(display_df["published_at"]).dt.strftime("%m-%d %H:%M")
 
@@ -372,7 +373,7 @@ elif page == PAGES[1]:
     end_idx = start_idx + PAGE_SIZE
     page_df = display_df.iloc[start_idx:end_idx]
 
-    # Render as clickable links
+    # Render as cards with summary + author
     for _, row in page_df.iterrows():
         title = row["title"]
         url = row["url"]
@@ -380,13 +381,18 @@ elif page == PAGES[1]:
         time_str = row["published_at"]
         kw = row["keywords"]
         score = row["score"]
+        summary = row.get("summary", "") or ""
+        author = row.get("author", "") or ""
 
-        kw_html = f" *`{kw}`*" if kw else ""
-        score_html = f" ⬆{score}" if pd.notna(score) and score else ""
+        kw_str = f" *`{kw}`*" if kw else ""
+        score_str = f" ⬆{score}" if pd.notna(score) and score else ""
+        author_str = f" · ✍ {author}" if author else ""
+        summary_str = f"\n\n> {summary[:200]}{'...' if len(summary) > 200 else ''}" if summary else ""
 
         st.markdown(
-            f"**[{time_str}]** `[{src}]` [{title}]({url}){kw_html}{score_html}",
+            f"**[{time_str}]** `[{src}]` [{title}]({url}){kw_str}{score_str}{author_str}{summary_str}",
         )
+        st.markdown("")
 
 
 # =========================================================================
