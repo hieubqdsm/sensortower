@@ -320,18 +320,41 @@ elif page == PAGES[1]:
     display_df = filtered[display_cols].copy() if not filtered.empty else filtered
     display_df["published_at"] = pd.to_datetime(display_df["published_at"]).dt.strftime("%m-%d %H:%M")
 
-    # Pagination controls
+    # Pagination state
+    if "news_page" not in st.session_state:
+        st.session_state["news_page"] = 1
+    st.session_state["news_page"] = max(1, min(st.session_state["news_page"], n_pages))
+    page_num = st.session_state["news_page"]
+
+    # Pagination buttons row
     if n_pages > 1:
-        col_pg1, col_pg2, col_pg3 = st.columns([1, 2, 1])
-        with col_pg2:
-            page_num = st.number_input(
-                "Page", min_value=1, max_value=n_pages, value=1, step=1,
-                label_visibility="collapsed",
-            )
-        col_pg1.write(f"Page {page_num} / {n_pages}")
-        col_pg3.write(f"{(page_num-1)*PAGE_SIZE+1}-{min(page_num*PAGE_SIZE, total_items)} of {total_items}")
-    else:
-        page_num = 1
+        cols = st.columns(11)
+        # Prev button
+        if cols[0].button("‹", key="news_prev", disabled=(page_num <= 1),
+                          help="Previous page", use_container_width=True):
+            st.session_state["news_page"] -= 1
+            st.rerun()
+        # Page number buttons (show up to 9 around current)
+        start_p = max(1, page_num - 4)
+        end_p = min(n_pages, start_p + 8)
+        btn_idx = 1
+        for p in range(start_p, end_p + 1):
+            if btn_idx <= 9:
+                label = f"**{p}**" if p == page_num else str(p)
+                if cols[btn_idx].button(
+                    str(p), key=f"news_p{p}",
+                    disabled=(p == page_num), use_container_width=True,
+                ):
+                    st.session_state["news_page"] = p
+                    st.rerun()
+                btn_idx += 1
+        # Next button
+        if cols[10].button("›", key="news_next", disabled=(page_num >= n_pages),
+                           help="Next page", use_container_width=True):
+            st.session_state["news_page"] += 1
+            st.rerun()
+        st.caption(f"Page {page_num} of {n_pages} — "
+                   f"showing {(page_num-1)*PAGE_SIZE+1}-{min(page_num*PAGE_SIZE, total_items)} of {total_items}")
 
     start_idx = (page_num - 1) * PAGE_SIZE
     end_idx = start_idx + PAGE_SIZE
