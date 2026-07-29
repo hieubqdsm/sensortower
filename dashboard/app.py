@@ -133,7 +133,24 @@ csv_files = ["gacha_flat", "steam_flat", "steam_hourly_flat", "itunes_flat",
              "news_flat", "dim_date", "ua_flat", "kpis_flat", "retention_flat"]
 for f in csv_files:
     st.sidebar.markdown(f"&nbsp;&nbsp;[`{f}.csv`]({api_base}/downloads/{f}.csv)")
-st.sidebar.caption("Mở trên máy khác (cùng WiFi) để tải. API server phải đang chạy.")
+st.sidebar.caption("CSV: tải file tĩnh. Cần re-export để update.")
+
+# Live API endpoints (Power BI Web connector — real-time from DB)
+st.sidebar.write("**🔌 Live API (Power BI Web connector):**")
+api_endpoints = [
+    ("Gacha revenue (LIVE)", "/api/gacha/revenue?format=csv"),
+    ("Steam hourly CCU (LIVE)", "/api/tables/fact_steam_hourly_ccu?format=csv"),
+    ("iTunes rankings (LIVE)", "/api/tables/fact_itunes_rankings?format=csv"),
+    ("News 48h (LIVE)", "/api/news?hours=48&format=csv"),
+    ("UA campaigns (LIVE)", "/api/tables/sample_ua_campaigns?format=csv"),
+    ("KPIs DAU/Retention (LIVE)", "/api/tables/sample_daily_kpis?format=csv"),
+    ("Retention Cookie Cats (LIVE)", "/api/tables/sample_cookie_cats?format=csv"),
+    ("Health check", "/api/health"),
+    ("Swagger docs", "/docs"),
+]
+for label, path in api_endpoints:
+    st.sidebar.markdown(f"&nbsp;&nbsp;[`{label}`]({api_base}{path})")
+st.sidebar.caption("Live API: data realtime từ DB. Power BI → Get Data → Web → URL + header `X-API-Key`.")
 
 # ---- Page routing via radio (đơn giản, không cần multipage app) ---------
 PAGES = [
