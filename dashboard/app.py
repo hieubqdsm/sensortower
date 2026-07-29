@@ -1342,6 +1342,27 @@ elif page == PAGES[9]:
     st.title("📢 UA Performance")
     st.caption("⚠️ SIMULATED data — based on gacha revenue × industry benchmarks. Not actual ad spend.")
 
+    with st.expander("📖 Cách đọc thông số UA"):
+        st.markdown("""
+        **Tam giác User Acquisition (UA):**
+        ```
+        Người dùng thấy QUẢNG CÁO (Impression)
+                 ↓ Click vào quảng cáo ← CTR đo ở đây
+            Vào App Store page
+                 ↓ Tải game (Install) ← CVR đo ở đây
+            Mở game, chơi
+        ```
+
+        | Chỉ số | Ý nghĩa | Công thức | Benchmark tốt |
+        |--------|---------|-----------|--------------|
+        | **CPI** | Chi phí chạy ads cho 1 lượt tải | Spend ÷ Installs | VN $0.20-2, US $2-5 |
+        | **CTR** | % người click sau khi thấy ad | Clicks ÷ Impressions | >2% = creative tốt |
+        | **CVR** | % người tải sau khi click | Installs ÷ Clicks | >20% = App Store page tốt |
+        | **ROAS** | Tỷ suất hoàn vốn ad spend | LTV ÷ CPI | >1.0x = có lãi |
+
+        **Luồng mua user:** Muốn giảm CPI → tăng CTR (làm creative đẹp hơn) hoặc tăng CVR (tối ưu App Store page).
+        """)
+
     @st.cache_data(ttl=300)
     def load_ua_data() -> pd.DataFrame:
         with get_connection() as conn:
@@ -1375,6 +1396,7 @@ elif page == PAGES[9]:
 
     # === Spend by region ===
     st.subheader("💰 Spend by Region")
+    st.caption("💡 Mỹ chi nhiều nhất (budget lớn) nhưng CPI đắt. VN chi ít nhưng mua được nhiều installs (CPI rẻ).")
     spend_by_region = filtered.groupby("region")["spend_usd"].sum().reset_index()
     fig = px.bar(spend_by_region, x="region", y="spend_usd",
                  labels={"spend_usd": "Spend (USD)", "region": ""},
@@ -1383,6 +1405,7 @@ elif page == PAGES[9]:
 
     # === CPI comparison by region ===
     st.subheader("💵 CPI by Region (benchmark)")
+    st.caption("💡 Cột càng ngắn = CPI càng rẻ = mua user rẻ hơn. VN luôn thấp nhất → UA hiệu quả nhất ở VN.")
     cpi_data = filtered.groupby(["region", "game_name"])["cpi"].mean().reset_index()
     fig_cpi = px.bar(cpi_data, x="region", y="cpi", color="game_name",
                      labels={"cpi": "CPI (USD)", "region": ""},
@@ -1392,6 +1415,7 @@ elif page == PAGES[9]:
 
     # === CTR vs CVR scatter ===
     st.subheader("🎯 CTR vs CVR (creative performance)")
+    st.caption("💡 Góc trên-phải (CTR cao + CVR cao) = creative tốt. Kích thước chấm = spend. Màu = region.")
     fig_scatter = px.scatter(
         filtered, x="ctr", y="cvr", color="region", size="spend_usd",
         hover_data=["game_name", "ad_network"],
@@ -1404,6 +1428,7 @@ elif page == PAGES[9]:
     # === ROAS by region ===
     st.divider()
     st.subheader("📈 ROAS D30 by Region")
+    st.caption("💡 ROAS > 1.0x = có lãi. VN 7.7x (CPI thấp) = cực kỳ profitable. US/JP cần LTV cao hơn.")
     roas_data = filtered.groupby("region").agg(
         avg_roas=("roas_d30", "mean"),
         avg_cpi=("cpi", "mean"),
@@ -1426,9 +1451,31 @@ elif page == PAGES[10]:
     st.title("📊 Retention & DAU")
     st.caption("⚠️ SAMPLE data — Cookie Cats (real) + simulated DAU/KPIs from benchmarks.")
 
+    with st.expander("📖 Cách đọc thông số Retention & DAU"):
+        st.markdown("""
+        **Retention (Tỷ lệ giữ chân):** % user quay lại sau N ngày kể từ lần cài đầu.
+        - **D1**: quay lại sau 1 ngày → RPG gacha benchmark: **40-50%** (tốt)
+        - **D7**: vẫn chơi sau 7 ngày → benchmark: **15-25%**
+        - **D30**: vẫn chơi sau 30 ngày → benchmark: **8-12%**
+        - D30 < 5% = game giữ chân kém → cần cải thiện content/liveops
+
+        **DAU/MAU:**
+        - **DAU** (Daily Active Users): số user unique active mỗi ngày
+        - **MAU** (Monthly Active Users): số user unique active mỗi tháng
+        - **Stickiness** = DAU ÷ MAU × 100% → >20% = game "dính" cao
+
+        **Monetization:**
+        - **ARPU**: doanh thu trung bình mỗi user/tháng (RPG gacha: $1.5-5)
+        - **ARPDAU**: doanh thu trung bình mỗi user/ngày
+        - **IAP conversion**: % user chuyển từ free → paying (gacha: 5-15%)
+
+        **Quality:**
+        - **Crash rate**: % session bị crash → <1% = ổn, >2% = critical
+        """)
+
     # === Cookie Cats: real retention A/B test ===
     st.subheader("🧪 Cookie Cats A/B Test (real data — 90K users)")
-    st.caption("Gate 30 vs Gate 40 — test moving first gate from level 30 to 40")
+    st.caption("Test: di chuyển gate từ level 30 → 40. Kết quả: Gate 30 retention cao hơn → giữ gate 30.")
 
     @st.cache_data(ttl=300)
     def load_cookie_cats() -> pd.DataFrame:
@@ -1460,6 +1507,7 @@ elif page == PAGES[10]:
 
         # Session distribution
         st.write("**Session distribution (game rounds played):**")
+        st.caption("💡 Đa số user chơi 1-20 rounds rồi nghỉ. Đuôi dài bên phải = core gamers/whales.")
         fig_hist = px.histogram(cc[cc["sum_gamerounds"] < 200], x="sum_gamerounds",
                                 color="version", nbins=50,
                                 labels={"sum_gamerounds": "Game Rounds", "version": "Gate"},
@@ -1488,6 +1536,7 @@ elif page == PAGES[10]:
 
         # DAU trend
         st.write("**DAU trend (30 days):**")
+        st.caption("💡 Đường cao hơn = DAU lớn hơn = game phổ biến hơn. Biến động ±15%/ngày = tự nhiên (cuối tuần cao hơn).")
         fig_dau = px.line(kpi_filtered, x="snapshot_date", y="dau", color="game_name",
                           title="Daily Active Users (simulated)", markers=True,
                           labels={"dau": "DAU", "snapshot_date": "Date"})
@@ -1497,6 +1546,7 @@ elif page == PAGES[10]:
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.write("**D1 Retention:**")
+            st.caption("💡 Thanh dài hơn = retention tốt hơn. D1 > 45% = tốt (RPG gacha benchmark).")
             latest = kpi_filtered[kpi_filtered["snapshot_date"] == kpi_filtered["snapshot_date"].max()]
             fig_d1 = px.bar(latest.sort_values("d1_retention", ascending=True),
                             x="d1_retention", y="game_name", orientation="h",
@@ -1506,6 +1556,7 @@ elif page == PAGES[10]:
             st.plotly_chart(fig_d1, use_container_width=True)
         with col_r2:
             st.write("**D7/D30 Retention:**")
+            st.caption("💡 D30 càng gần D1 = giữ chân tốt. D30 < 5% = cảnh báo.")
             ret_melt = latest.melt(id_vars=["game_name"],
                                    value_vars=["d7_retention", "d30_retention"],
                                    var_name="Metric", value_name="Rate")
@@ -1519,6 +1570,7 @@ elif page == PAGES[10]:
         # Full KPI table
         st.divider()
         st.write("**📋 Full KPI Summary (latest snapshot):**")
+        st.caption("💡 DAU = active users/ngày | ARPU = doanh thu/user/tháng | D1/D7/D30 = retention | IAP% = paying user rate | Crash = % session crash")
         display = latest[["game_name", "dau", "mau", "arpu", "arpdau",
                           "d1_retention", "d7_retention", "d30_retention",
                           "iap_conversion_pct", "crash_rate_pct"]].copy()
