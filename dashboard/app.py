@@ -63,7 +63,7 @@ def load_dim_publisher() -> pd.DataFrame:
 def load_fact_news(hours: int = 24) -> pd.DataFrame:
     """Load news items trong N giờ gần nhất."""
     with get_connection() as conn:
-        return pd.read_sql(
+        df = pd.read_sql(
             """
             SELECT n.*, s.source_type, s.source_name,
                    g.name as game_name
@@ -76,6 +76,15 @@ def load_fact_news(hours: int = 24) -> pd.DataFrame:
             conn,
             params=(f"-{hours} hours",),
         )
+    return _utc_to_vn(df, ["published_at", "fetched_at"])
+
+
+def _utc_to_vn(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """Convert UTC datetime columns to Vietnam time (UTC+7) for display."""
+    for col in cols:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], utc=True, errors="coerce").dt.tz_convert("Asia/Ho_Chi_Minh").dt.tz_localize(None)
+    return df
 
 
 @st.cache_data(ttl=60)
