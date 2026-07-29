@@ -136,6 +136,8 @@ PAGES = [
     "🔍 Game Detail",
     "💼 Deal Evaluation",
     "💰 Gacha Revenue",
+    "📢 UA Performance",
+    "📊 Retention & DAU",
 ]
 page = st.sidebar.radio("Navigate", PAGES, label_visibility="collapsed")
 st.sidebar.divider()
@@ -1331,6 +1333,207 @@ elif page == PAGES[8]:
             f"💡 Tổng revenue {n_months} tháng: ${totals_view['total_revenue_usd'].sum()/1e6:.0f}M. "
             f"Avg/Month = tổng chia số tháng track được (games mới ra sẽ ít tháng hơn)."
         )
+
+
+# =========================================================================
+# PAGE 10: 📢 UA PERFORMANCE (CPI/CTR/CVR/ROAS — simulated)
+# =========================================================================
+elif page == PAGES[9]:
+    st.title("📢 UA Performance")
+    st.caption("⚠️ SIMULATED data — based on gacha revenue × industry benchmarks. Not actual ad spend.")
+
+    @st.cache_data(ttl=300)
+    def load_ua_data() -> pd.DataFrame:
+        with get_connection() as conn:
+            return pd.read_sql_query("SELECT * FROM sample_ua_campaigns ORDER BY snapshot_date DESC", conn)
+
+    ua = load_ua_data()
+    if ua.empty:
+        st.warning("Chưa có UA data. Chạy: python scripts/load_external_datasets.py")
+        st.stop()
+
+    # KPIs
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Total Spend", f"${ua['spend_usd'].sum()/1e6:.1f}M")
+    col2.metric("Total Installs", f"{ua['installs'].sum():,}")
+    col3.metric("Avg CPI", f"${ua['cpi'].mean():.2f}")
+    col4.metric("Avg CTR", f"{ua['ctr'].mean()*100:.1f}%")
+    col5.metric("Avg CVR", f"{ua['cvr'].mean()*100:.1f}%")
+
+    st.divider()
+
+    # Filters
+    colf1, colf2 = st.columns(2)
+    with colf1:
+        games = sorted(ua["game_name"].unique())
+        sel_games = st.multiselect("🎮 Games", games, default=games[:5], key="ua_games")
+    with colf2:
+        regions = sorted(ua["region"].unique())
+        sel_regions = st.multiselect("Region", regions, default=regions, key="ua_regions")
+
+    filtered = ua[ua["game_name"].isin(sel_games) & ua["region"].isin(sel_regions)]
+
+    # === Spend by region ===
+    st.subheader("💰 Spend by Region")
+    spend_by_region = filtered.groupby("region")["spend_usd"].sum().reset_index()
+    fig = px.bar(spend_by_region, x="region", y="spend_usd",
+                 labels={"spend_usd": "Spend (USD)", "region": ""},
+                 title="UA Spend Distribution")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # === CPI comparison by region ===
+    st.subheader("💵 CPI by Region (benchmark)")
+    cpi_data = filtered.groupby(["region", "game_name"])["cpi"].mean().reset_index()
+    fig_cpi = px.bar(cpi_data, x="region", y="cpi", color="game_name",
+                     labels={"cpi": "CPI (USD)", "region": ""},
+                     title="Cost Per Install by Region",
+                     barmode="group")
+    st.plotly_chart(fig_cpi, use_container_width=True)
+
+    # === CTR vs CVR scatter ===
+    st.subheader("🎯 CTR vs CVR (creative performance)")
+    fig_scatter = px.scatter(
+        filtered, x="ctr", y="cvr", color="region", size="spend_usd",
+        hover_data=["game_name", "ad_network"],
+        labels={"ctr": "CTR (click rate)", "cvr": "CVR (install rate)"},
+        title="Creative Performance: CTR vs CVR",
+    )
+    fig_scatter.update_traces(marker=dict(opacity=0.7))
+    st.plotly_chart(fig_scatter, use_container_width=True)
+
+    # === ROAS by region ===
+    st.divider()
+    st.subheader("📈 ROAS D30 by Region")
+    roas_data = filtered.groupby("region").agg(
+        avg_roas=("roas_d30", "mean"),
+        avg_cpi=("cpi", "mean"),
+        total_spend=("spend_usd", "sum"),
+    ).reset_index()
+    display = roas_data.copy()
+    display["ROAS"] = display["avg_roas"].apply(lambda x: f"{x:.1f}x")
+    display["CPI"] = display["avg_cpi"].apply(lambda x: f"${x:.2f}")
+    display["Spend"] = display["total_spend"].apply(lambda x: f"${x/1e6:.1f}M")
+    display["Profitable"] = display["avg_roas"].apply(lambda x: "✅" if x >= 1 else "❌")
+    st.dataframe(display[["region", "ROAS", "CPI", "Spend", "Profitable"]],
+                 use_container_width=True, hide_index=True)
+    st.caption("💡 VN có ROAS cao nhất do CPI thấp. US/JP cần LTV cao hơn để profitable.")
+
+
+# =========================================================================
+# PAGE 11: 📊 RETENTION & DAU (sample data)
+# =========================================================================
+elif page == PAGES[10]:
+    st.title("📊 Retention & DAU")
+    st.caption("⚠️ SAMPLE data — Cookie Cats (real) + simulated DAU/KPIs from benchmarks.")
+
+    # === Cookie Cats: real retention A/B test ===
+    st.subheader("🧪 Cookie Cats A/B Test (real data — 90K users)")
+    st.caption("Gate 30 vs Gate 40 — test moving first gate from level 30 to 40")
+
+    @st.cache_data(ttl=300)
+    def load_cookie_cats() -> pd.DataFrame:
+        with get_connection() as conn:
+            return pd.read_sql_query("SELECT * FROM sample_cookie_cats", conn)
+
+    cc = load_cookie_cats()
+    if not cc.empty:
+        col_cc1, col_cc2, col_cc3 = st.columns(3)
+        # Retention by version
+        cc_stats = cc.groupby("version").agg(
+            d1=("retention_1", "mean"),
+            d7=("retention_7", "mean"),
+            users=("userid", "count"),
+            avg_rounds=("sum_gamerounds", "mean"),
+        ).reset_index()
+        for _, r in cc_stats.iterrows():
+            st.write(f"**Gate {r['version']}:** D1={r['d1']*100:.1f}% | D7={r['d7']*100:.1f}% | "
+                     f"{r['users']:,} users | avg {r['avg_rounds']:.0f} rounds")
+
+        # Retention bar chart
+        cc_melt = cc_stats.melt(id_vars=["version"], value_vars=["d1", "d7"],
+                                var_name="Retention", value_name="Rate")
+        fig_cc = px.bar(cc_melt, x="Retention", y="Rate", color="version",
+                        barmode="group", title="Retention: Gate 30 vs Gate 40",
+                        labels={"Rate": "Retention Rate", "version": "Gate"})
+        fig_cc.update_yaxes(tickformat=".0%")
+        st.plotly_chart(fig_cc, use_container_width=True)
+
+        # Session distribution
+        st.write("**Session distribution (game rounds played):**")
+        fig_hist = px.histogram(cc[cc["sum_gamerounds"] < 200], x="sum_gamerounds",
+                                color="version", nbins=50,
+                                labels={"sum_gamerounds": "Game Rounds", "version": "Gate"},
+                                title="Session length distribution (capped at 200 rounds)")
+        st.plotly_chart(fig_hist, use_container_width=True)
+
+    st.divider()
+
+    # === Simulated DAU/Retention for gacha games ===
+    st.subheader("📈 DAU & Retention (simulated — top gacha games)")
+
+    @st.cache_data(ttl=300)
+    def load_kpis() -> pd.DataFrame:
+        with get_connection() as conn:
+            return pd.read_sql_query("SELECT * FROM sample_daily_kpis ORDER BY snapshot_date", conn)
+
+    kpis = load_kpis()
+    if not kpis.empty:
+        # Game selector
+        sel_kpi_games = st.multiselect(
+            "🎮 Games", sorted(kpis["game_name"].unique()),
+            default=sorted(kpis["game_name"].unique())[:5],
+            key="kpi_games",
+        )
+        kpi_filtered = kpis[kpis["game_name"].isin(sel_kpi_games)]
+
+        # DAU trend
+        st.write("**DAU trend (30 days):**")
+        fig_dau = px.line(kpi_filtered, x="snapshot_date", y="dau", color="game_name",
+                          title="Daily Active Users (simulated)", markers=True,
+                          labels={"dau": "DAU", "snapshot_date": "Date"})
+        st.plotly_chart(fig_dau, use_container_width=True)
+
+        # Retention comparison
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            st.write("**D1 Retention:**")
+            latest = kpi_filtered[kpi_filtered["snapshot_date"] == kpi_filtered["snapshot_date"].max()]
+            fig_d1 = px.bar(latest.sort_values("d1_retention", ascending=True),
+                            x="d1_retention", y="game_name", orientation="h",
+                            labels={"d1_retention": "D1 Retention", "game_name": ""},
+                            title="D1 Retention by game", range_x=[0, 0.6])
+            fig_d1.update_xaxes(tickformat=".0%")
+            st.plotly_chart(fig_d1, use_container_width=True)
+        with col_r2:
+            st.write("**D7/D30 Retention:**")
+            ret_melt = latest.melt(id_vars=["game_name"],
+                                   value_vars=["d7_retention", "d30_retention"],
+                                   var_name="Metric", value_name="Rate")
+            fig_ret = px.bar(ret_melt, x="game_name", y="Rate", color="Metric",
+                            barmode="group", title="D7 vs D30 Retention",
+                            labels={"game_name": ""})
+            fig_ret.update_yaxes(tickformat=".0%")
+            fig_ret.update_xaxes(tickangle=45)
+            st.plotly_chart(fig_ret, use_container_width=True)
+
+        # Full KPI table
+        st.divider()
+        st.write("**📋 Full KPI Summary (latest snapshot):**")
+        display = latest[["game_name", "dau", "mau", "arpu", "arpdau",
+                          "d1_retention", "d7_retention", "d30_retention",
+                          "iap_conversion_pct", "crash_rate_pct"]].copy()
+        display["DAU"] = display["dau"].apply(lambda x: f"{x:,}")
+        display["MAU"] = display["mau"].apply(lambda x: f"{x:,}")
+        display["ARPU"] = display["arpu"].apply(lambda x: f"${x:.2f}")
+        display["ARPDAU"] = display["arpdau"].apply(lambda x: f"${x:.4f}")
+        display["D1"] = display["d1_retention"].apply(lambda x: f"{x*100:.0f}%")
+        display["D7"] = display["d7_retention"].apply(lambda x: f"{x*100:.0f}%")
+        display["D30"] = display["d30_retention"].apply(lambda x: f"{x*100:.0f}%")
+        display["IAP %"] = display["iap_conversion_pct"].apply(lambda x: f"{x*100:.1f}%")
+        display["Crash"] = display["crash_rate_pct"].apply(lambda x: f"{x:.1f}%")
+        st.dataframe(display[["game_name", "DAU", "MAU", "ARPU", "ARPDAU",
+                              "D1", "D7", "D30", "IAP %", "Crash"]],
+                     use_container_width=True, hide_index=True)
 
 
 # ---- Footer --------------------------------------------------------------

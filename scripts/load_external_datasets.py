@@ -76,6 +76,26 @@ CREATE TABLE IF NOT EXISTS sample_daily_kpis (
     source TEXT DEFAULT 'SIMULATED from industry benchmarks',
     UNIQUE(game_name, snapshot_date)
 );
+
+-- Simulated UA campaign data (CPI/CTR/CVR/spend/installs)
+CREATE TABLE IF NOT EXISTS sample_ua_campaigns (
+    ua_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_name TEXT NOT NULL,
+    snapshot_date TEXT NOT NULL,
+    region TEXT,
+    ad_network TEXT,
+    impressions INTEGER,
+    clicks INTEGER,
+    installs INTEGER,
+    spend_usd REAL,
+    cpi REAL,
+    ctr REAL,
+    cvr REAL,
+    roas_d7 REAL,
+    roas_d30 REAL,
+    source TEXT DEFAULT 'SIMULATED from gacha revenue + benchmarks',
+    UNIQUE(game_name, snapshot_date, region, ad_network)
+);
 """
 
 
@@ -193,6 +213,93 @@ def simulate_daily_kpis():
     return len(df)
 
 
+def simulate_ua_campaigns():
+    """
+    Simulate UA campaign data (CPI/CTR/CVR/spend/installs/ROAS) cho top gacha games.
+
+    Logic:
+    - Spend = ước tính từ revenue (publisher thường re-invest 20-30% revenue vào UA)
+    - CPI = benchmark theo region (methodology.md §6)
+    - CTR = 1-3% (industry avg cho mobile game ads)
+    - CVR = 15-30% (industry avg click → install)
+    - Installs = Spend / CPI
+    - Impressions = Clicks / CTR
+    - ROAS = ARPU × D30_retention_lifespan / CPI
+    """
+    import random
+    random.seed(123)
+
+    REGIONS = {
+        "VN": {"cpi_range": (0.30, 1.50), "ctr_range": (0.015, 0.035), "cvr_range": (0.20, 0.35)},
+        "US": {"cpi_range": (3.0, 12.0), "ctr_range": (0.008, 0.020), "cvr_range": (0.12, 0.25)},
+        "JP": {"cpi_range": (5.0, 20.0), "ctr_range": (0.010, 0.025), "cvr_range": (0.10, 0.20)},
+    }
+    AD_NETWORKS = ["Meta (Facebook)", "TikTok", "Google Ads", "AppLovin"]
+
+    with get_connection() as conn:
+        games = conn.execute("""
+            SELECT g.name, AVG(r.revenue_usd) as avg_rev
+            FROM fact_gacha_revenue r
+            JOIN dim_gacha_game g ON r.game_id = g.game_id
+            WHERE g.publisher IS NOT NULL AND g.publisher != ''
+            GROUP BY g.game_id ORDER BY avg_rev DESC LIMIT 12
+        """).fetchall()
+
+    if not games:
+        logger.warning("No gacha games to simulate UA from")
+        return 0
+
+    rows = []
+    from datetime import datetime, timedelta
+    base_date = datetime(2026, 6, 1)
+
+    for game in games:
+        name = game["name"]
+        monthly_rev = game["avg_rev"]
+        daily_spend_budget = monthly_rev * 0.25 / 30
+
+        for day_offset in range(30):
+            snap_date = (base_date + timedelta(days=day_offset)).strftime("%Y-%m-%d")
+            for region, bench in REGIONS.items():
+                spend_share = {"VN": 0.15, "US": 0.50, "JP": 0.35}.get(region, 0.33)
+                spend = daily_spend_budget * spend_share * random.uniform(0.8, 1.2)
+                if spend < 10:
+                    continue
+
+                cpi = random.uniform(*bench["cpi_range"])
+                installs = int(spend / cpi)
+                if installs < 1:
+                    continue
+
+                ctr = random.uniform(*bench["ctr_range"])
+                clicks = int(installs / random.uniform(*bench["cvr_range"]))
+                impressions = int(clicks / ctr)
+                cvr = installs / clicks if clicks > 0 else 0
+
+                d1 = 0.45
+                lifespan = min(60, int(1 / max(0.01, 1 - d1)))
+                ltv = 3.0 * lifespan / 30
+                roas_d7 = round((ltv * 0.3) / cpi, 2)
+                roas_d30 = round(ltv / cpi, 2)
+
+                rows.append({
+                    "game_name": name, "snapshot_date": snap_date,
+                    "region": region, "ad_network": random.choice(AD_NETWORKS),
+                    "impressions": impressions, "clicks": clicks,
+                    "installs": installs, "spend_usd": round(spend, 2),
+                    "cpi": round(cpi, 2), "ctr": round(ctr, 4),
+                    "cvr": round(cvr, 4),
+                    "roas_d7": roas_d7, "roas_d30": roas_d30,
+                })
+
+    df = pd.DataFrame(rows)
+    with get_connection() as conn:
+        conn.execute("DELETE FROM sample_ua_campaigns")
+        df.to_sql("sample_ua_campaigns", conn, if_exists="append", index=False)
+    logger.info(f"✓ Simulated UA campaigns: {len(df)} rows")
+    return len(df)
+
+
 if __name__ == "__main__":
     init_schema()
     apply_schema()
@@ -202,10 +309,12 @@ if __name__ == "__main__":
     n1 = load_cookie_cats()
     n2 = load_vgsales()
     n3 = simulate_daily_kpis()
+    n4 = simulate_ua_campaigns()
     print()
     print(f"Cookie Cats (real retention data): {n1:,} rows")
     print(f"VG Sales (historical sales):      {n2:,} rows")
     print(f"Simulated DAU/KPIs (benchmarks):  {n3:,} rows")
+    print(f"Simulated UA campaigns (CPI/CTR): {n4:,} rows")
     print()
-    print("All loaded into tables: sample_cookie_cats, sample_vgsales, sample_daily_kpis")
+    print("Tables: sample_cookie_cats, sample_vgsales, sample_daily_kpis, sample_ua_campaigns")
     print("⚠️  Label rõ: SAMPLE/SIMULATED data, not actual company MMP data.")
