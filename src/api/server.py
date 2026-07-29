@@ -121,8 +121,8 @@ def root() -> dict:
 
 # Các file CSV an toàn cho public download (chỉ flat views + dim_date)
 DOWNLOADABLE_CSVS = {
-    "gacha_flat.csv", "steam_flat.csv", "itunes_flat.csv",
-    "news_flat.csv", "dim_date.csv",
+    "gacha_flat.csv", "steam_flat.csv", "steam_hourly_flat.csv",
+    "itunes_flat.csv", "news_flat.csv", "dim_date.csv",
     "ua_flat.csv", "kpis_flat.csv", "retention_flat.csv",
 }
 

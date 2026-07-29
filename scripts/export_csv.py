@@ -85,6 +85,13 @@ FLAT_QUERIES: dict[str, str] = {
         WHERE g.source = 'steam'
         ORDER BY f.snapshot_date DESC, f.peak_ccu DESC
     """,
+    "steam_hourly_flat": """
+        SELECT g.name, g.genre, g.publisher_name,
+               h.snapshot_ts, h.peak_ccu
+        FROM fact_steam_hourly_ccu h
+        JOIN dim_game g ON h.game_id = g.game_id
+        ORDER BY h.snapshot_ts DESC, h.peak_ccu DESC
+    """,
     "itunes_flat": """
         SELECT g.game_id, g.name, g.genre, g.platform, g.release_date,
                g.price_usd, g.publisher_name, g.developer_name,
