@@ -97,3 +97,5 @@ logs/
 # =========================
 .ipynb_checkpoints/
 *.ipynb_checkpoints
+# External datasets (Kaggle, GitHub — download via scripts/load_external_datasets.py)
+data/external/
