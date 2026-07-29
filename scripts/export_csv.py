@@ -95,6 +95,25 @@ FLAT_QUERIES: dict[str, str] = {
         ORDER BY r.snapshot_date DESC, r.country, r.rank
     """,
     "dim_date": "SELECT * FROM dim_date ORDER BY date",
+    "ua_flat": """
+        SELECT game_name, snapshot_date, region, ad_network,
+               impressions, clicks, installs, spend_usd,
+               cpi, ctr, cvr, roas_d7, roas_d30
+        FROM sample_ua_campaigns
+        ORDER BY snapshot_date DESC, spend_usd DESC
+    """,
+    "kpis_flat": """
+        SELECT game_name, snapshot_date, genre,
+               dau, mau, arpdau, arpu,
+               d1_retention, d7_retention, d30_retention,
+               iap_conversion_pct, crash_rate_pct
+        FROM sample_daily_kpis
+        ORDER BY snapshot_date DESC, dau DESC
+    """,
+    "retention_flat": """
+        SELECT userid, version, sum_gamerounds, retention_1, retention_7
+        FROM sample_cookie_cats
+    """,
 }
 
 

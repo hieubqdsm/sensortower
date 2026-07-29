@@ -123,6 +123,7 @@ def root() -> dict:
 DOWNLOADABLE_CSVS = {
     "gacha_flat.csv", "steam_flat.csv", "itunes_flat.csv",
     "news_flat.csv", "dim_date.csv",
+    "ua_flat.csv", "kpis_flat.csv", "retention_flat.csv",
 }
 
 

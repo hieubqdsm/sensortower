@@ -120,7 +120,8 @@ except Exception:
 
 api_base = f"http://{lan_ip}:8000"
 st.sidebar.markdown(f"API: [`{api_base}/downloads`]({api_base}/downloads)")
-csv_files = ["gacha_flat", "steam_flat", "itunes_flat", "news_flat", "dim_date"]
+csv_files = ["gacha_flat", "steam_flat", "itunes_flat", "news_flat", "dim_date",
+             "ua_flat", "kpis_flat", "retention_flat"]
 for f in csv_files:
     st.sidebar.markdown(f"&nbsp;&nbsp;[`{f}.csv`]({api_base}/downloads/{f}.csv)")
 st.sidebar.caption("Mở trên máy khác (cùng WiFi) để tải. API server phải đang chạy.")
