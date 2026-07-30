@@ -245,27 +245,71 @@ with get_connection() as conn:
 
 ## 🛣️ Trạng thái hiện tại & Next steps
 
-### ✅ Đã hoàn thành (MVP)
+### ✅ Đã hoàn thành
 - [x] Project structure + .gitignore + requirements
-- [x] SQLite star schema (dim_game, dim_date, dim_publisher + 3 facts)
-- [x] 3 crawlers: Steam, iTunes (games-only filter), IGDB
-- [x] BaseCrawler: retry + rate limit + raw audit
-- [x] Pipeline orchestrator + CLI
-- [x] Docs: data dictionary, ToS, methodology
-- [x] **Smoke test iTunes**: 16 games thật crawled (US + VN)
+- [x] SQLite star schema (dim_game, dim_date, dim_publisher + facts)
+- [x] Crawlers: Steam (100 games + hourly CCU + watchlist), iTunes (US+VN)
+- [x] News pipeline: RSS (gaming + AI) + Hacker News + Steam News
+- [x] Gacha revenue tracker (HTML parser, 200 games × 10 tháng)
+- [x] Pipeline scheduler (`serve_pipeline.py` — tự crawl theo giờ)
+- [x] FastAPI server (serve data cho Power BI qua LAN/cloudflare)
+- [x] CSV export (9 flat views + downloads endpoint)
+- [x] Dashboard Streamlit (11 trang)
+- [x] Deal Evaluation (8 VN-validated criteria + scorecard)
+- [x] External datasets (Cookie Cats retention + simulated UA/KPIs)
+- [x] Docs: JD mapping, daily schedule, methodology, ToS
 
-### 🚧 Chưa test (cần API key)
-- [ ] Steam crawler (cần STEAM_API_KEY)
-- [ ] IGDB crawler (cần Twitch Client ID/Secret)
+### ⏭️ Roadmap
+1. Power BI dashboard (user tự build theo `powerbi/data_sources.md`)
+2. IGDB crawler (cần Twitch key)
+3. Cloudflare tunnel expose
 
-### ⏭️ Roadmap tiếp theo (ưu tiên giảm dần)
-1. **Power BI dashboard** (3 dashboards: Portfolio, Genre Trends, Game Comparison)
-   - Xem `powerbi/data_sources.md` cho connection info
-   - Sample DAX measures có ở cuối file đó
-2. **Thêm nguồn Tier 1**: Meta Ad Library, Reddit, YouTube
-3. **Scheduler**: APScheduler hoặc cron trên Mac (chạy daily tự động)
-4. **Deal evaluation model**: ROAS/LTV calculator (Python script)
-5. **Cohort retention dashboard** (cần MMP data — harder)
+---
+
+## 🎯 STANDARD WORKFLOWS — Agent PHẢI làm đúng mỗi lần
+
+Khi user yêu cầu, agent thực hiện ĐÚNG workflow sau (không tự ý đi lung tung):
+
+### "đọc tin game mới" / "morning briefing" / "có tin gì mới"
+1. Query DB: `SELECT title, summary, keywords, source_name, published_at FROM fact_news WHERE published_at >= datetime('now', '-24 hours') ORDER BY published_at DESC`
+2. Group by keyword tags (acquisition, funding, launch, departure, security...)
+3. Tóm tắt theo format:
+   - 🔴 Deal signals (acquisition, funding, partnership)
+   - 🟡 Market signals (business-model, departure, shutdown)
+   - 🟢 Opportunities (launch, new games)
+   - 🎮 Steam updates (patches, events)
+4. KHÔNG search web trừ khi user yêu cầu chi tiết thêm
+5. KHÔNG re-crawl news (scheduler đã làm)
+
+### "kiểm tra data" / "data có gì mới"
+1. Query DB row counts + latest timestamps
+2. Check scheduler log (`logs/pipeline-scheduler.log`)
+3. Report: Steam CCU snapshots, iTunes rankings, News count
+4. KHÔNG re-crawl
+
+### "đánh giá game X" / "game này có phát hành VN được không"
+1. Query gacha revenue trajectory (nếu có trong DB)
+2. Check Steam CCU + reviews (nếu có)
+3. Check iTunes VN rankings (nếu có)
+4. Apply 8 VN-validated criteria (xem Deal Evaluation dashboard)
+5. Output: scorecard + PURSUE/WATCH/PASS + recommendation
+6. KHÔNG search web trừ khi game chưa có trong DB
+
+### "thống kê" / "phân tích"
+1. Query DB trực tiếp (KHÔNG search web trước)
+2. Chỉ search web khi user yêu cầu thêm context ngoài data
+
+### "commit" / "push"
+1. `git status` → check files
+2. Tạo branch → add → commit (message chi tiết) → merge main → push
+
+---
+
+### 🚫 Agent KHÔNG được làm
+- ❌ Search web khi user chỉ hỏi "có tin gì mới" → query DB trước
+- ❌ Re-crawl khi user hỏi "kiểm tra data" → chỉ query DB
+- ❌ Tự ý phân tích scandal/company khi user chỉ hỏi stats → chờ user yêu cầu
+- ❌ Commit/push khi user chưa yêu cầu
 
 ---
 
