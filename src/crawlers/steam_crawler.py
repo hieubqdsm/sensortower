@@ -266,17 +266,20 @@ class SteamCrawler(BaseCrawler):
         facts_ok = 0
 
         for appid, name_hint in appids:
-            # Check if already crawled today (top 100 might include it)
+            # Always fetch CCU for watchlist games (they may not be in top 100 hourly)
+            # Skip daily fact only if already crawled today, but ALWAYS insert hourly
             with get_connection() as conn:
-                existing = conn.execute(
-                    "SELECT 1 FROM fact_steam_playercounts WHERE game_id IN "
-                    "(SELECT game_id FROM dim_game WHERE source='steam' AND source_app_id=?) "
-                    "AND snapshot_date=?",
-                    (str(appid), today),
+                game_row = conn.execute(
+                    "SELECT game_id FROM dim_game WHERE source='steam' AND source_app_id=?",
+                    (str(appid),),
                 ).fetchone()
-            if existing:
-                logger.debug(f"[steam] watchlist {appid} already crawled today — skip")
-                continue
+                existing_daily = None
+                if game_row:
+                    existing_daily = conn.execute(
+                        "SELECT 1 FROM fact_steam_playercounts WHERE game_id=? AND snapshot_date=?",
+                        (game_row["game_id"], today),
+                    ).fetchone()
+            has_daily = existing_daily is not None
 
             # Fetch details + CCU + reviews
             details = self.fetch_app_details(appid)
@@ -301,15 +304,18 @@ class SteamCrawler(BaseCrawler):
                     platform="pc",
                 )
 
-            # Reviews + CCU
+            # Reviews + CCU — ALWAYS fetch (watchlist games need hourly tracking)
             reviews = self.fetch_review_summary(appid)
             peak_ccu = self.fetch_current_ccu(appid) or 0
 
-            self.upsert_playercount_fact(
-                game_id=game_id, snapshot_date=today,
-                peak_ccu=int(peak_ccu),
-                positive=reviews["positive"], negative=reviews["negative"],
-            )
+            # Only insert daily fact if not already crawled today
+            if not has_daily:
+                self.upsert_playercount_fact(
+                    game_id=game_id, snapshot_date=today,
+                    peak_ccu=int(peak_ccu),
+                    positive=reviews["positive"], negative=reviews["negative"],
+                )
+            # ALWAYS insert hourly (watchlist games deserve full hourly timeline)
             self.insert_hourly_ccu(game_id, int(peak_ccu))
             facts_ok += 1
             logger.info(f"[steam] watchlist: {name_hint or appid} → {peak_ccu:,} CCU")
