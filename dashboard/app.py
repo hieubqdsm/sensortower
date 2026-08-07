@@ -60,22 +60,45 @@ def load_dim_publisher() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60)
-def load_fact_news(hours: int = 24) -> pd.DataFrame:
-    """Load news items trong N giờ gần nhất."""
+def load_fact_news(hours: int = 24, lookback: str = "24h") -> pd.DataFrame:
+    """Load news items trong khoảng lookback.
+    lookback: "6h", "12h", "24h", "48h", "72h", "7d", "30d", hoặc "all".
+    Nếu lookback != "all", dùng hours để tương thích ngược.
+    """
     with get_connection() as conn:
-        df = pd.read_sql(
-            """
-            SELECT n.*, s.source_type, s.source_name,
-                   g.name as game_name
-            FROM fact_news n
-            JOIN dim_news_source s ON n.source_id = s.source_id
-            LEFT JOIN dim_game g ON n.game_id = g.game_id
-            WHERE n.published_at >= datetime('now', ?)
-            ORDER BY n.published_at DESC
-            """,
-            conn,
-            params=(f"-{hours} hours",),
-        )
+        if lookback == "all":
+            modifier = None
+        elif lookback.endswith("d"):
+            modifier = f"-{int(lookback[:-1])} days"
+        else:
+            modifier = f"-{hours} hours"
+
+        if modifier is None:
+            df = pd.read_sql(
+                """
+                SELECT n.*, s.source_type, s.source_name,
+                       g.name as game_name
+                FROM fact_news n
+                JOIN dim_news_source s ON n.source_id = s.source_id
+                LEFT JOIN dim_game g ON n.game_id = g.game_id
+                ORDER BY n.published_at DESC
+                """,
+                conn,
+            )
+        else:
+            df = pd.read_sql(
+                """
+                SELECT n.*, s.source_type, s.source_name,
+                       g.name as game_name
+                FROM fact_news n
+                JOIN dim_news_source s ON n.source_id = s.source_id
+                LEFT JOIN dim_game g ON n.game_id = g.game_id
+                WHERE n.published_at >= datetime('now', ?)
+                ORDER BY n.published_at DESC
+                """,
+                conn,
+                params=(modifier,),
+            )
     return _utc_to_vn(df, ["published_at", "fetched_at"])
 
 
@@ -152,7 +175,7 @@ for label, path in api_endpoints:
     st.sidebar.markdown(f"&nbsp;&nbsp;[`{label}`]({api_base}{path})")
 st.sidebar.caption("Live API: data realtime từ DB. Power BI → Get Data → Web → URL + header `X-API-Key`.")
 
-# ---- Page routing via radio (đơn giản, không cần multipage app) ---------
+# ---- Page routing via URL query param (giữ trang khi reload, dùng ?page=news) -----
 PAGES = [
     "📊 Portfolio Overview",
     "📰 Daily News",
@@ -166,8 +189,41 @@ PAGES = [
     "📢 UA Performance",
     "📊 Retention & DAU",
 ]
-page = st.sidebar.radio("Navigate", PAGES, label_visibility="collapsed")
+# Slug cho URL (vd: ?page=news) — ngắn gọn, dễ nhớ
+PAGE_SLUGS = [
+    "overview",
+    "news",
+    "rankings",
+    "steam-ccu",
+    "genre-publisher",
+    "genre-trends",
+    "game-detail",
+    "deal-evaluation",
+    "gacha-revenue",
+    "ua-performance",
+    "retention-dau",
+]
+SLUG_TO_PAGE = dict(zip(PAGE_SLUGS, PAGES))
+PAGE_TO_SLUG = dict(zip(PAGES, PAGE_SLUGS))
+
+# Đọc page từ URL query param, mặc định overview
+qp = st.query_params
+slug = qp.get("page", "overview")
+page = SLUG_TO_PAGE.get(slug, PAGES[0])
+
+# Menu sidebar — dùng BUTTON (click trong cùng Streamlit session, KHÔNG mở tab mới)
+# Button click → cập nhật query_params → reload giữ trang
+st.sidebar.markdown("#### 📑 Trang")
+for p, slug_i in zip(PAGES, PAGE_SLUGS):
+    is_current = (p == page)
+    label = f"👉 {p}" if is_current else p
+    # use_container_width để button chiếm hết sidebar, nhìn như menu dọc
+    if st.sidebar.button(label, key=f"nav_{slug_i}", use_container_width=True):
+        if not is_current:
+            st.query_params["page"] = slug_i
+            st.rerun()
 st.sidebar.divider()
+st.sidebar.caption("💡 URL `?page=...` giữ trang khi reload/F5.")
 st.sidebar.caption("Power BI dashboard build riêng — đây chỉ là inspector.")
 
 
@@ -247,20 +303,40 @@ elif page == PAGES[1]:
     # Hours selector
     col_h1, col_h2 = st.columns([1, 3])
     with col_h1:
-        hours = st.selectbox("Lookback", [6, 12, 24, 48, 72], index=2)
+        lookback = st.selectbox(
+            "Lookback",
+            ["1 ngày", "3 ngày", "1 tuần", "1 tháng", "1 năm", "Tất cả"],
+            index=0,
+        )
 
-    news = load_fact_news(hours)
+    # Map lookback label sang modifier SQLite
+    lookback_map = {
+        "1 ngày": ("1d", 24),
+        "3 ngày": ("3d", 72),
+        "1 tuần": ("7d", 168),
+        "1 tháng": ("30d", 720),
+        "1 năm": ("365d", 8760),
+        "Tất cả": ("all", None),
+    }
+    lookback_key, hours = lookback_map[lookback]
+
+    # Reset pagination khi đổi lookback (tránh hiển thị trang cũ trên data mới)
+    if st.session_state.get("news_lookback") != lookback:
+        st.session_state["news_lookback"] = lookback
+        st.session_state["news_page"] = 1
+
+    news = load_fact_news(hours or 24, lookback_key)
 
     if news.empty:
         st.warning(
-            f"❌ Chưa có news trong {hours}h qua. "
-            f"Chạy: `python scripts/run_news.py --hours {hours}` rồi refresh."
+            f"❌ Chưa có news trong {lookback}. "
+            f"Chạy: `python scripts/run_news.py --hours {hours or 24}` rồi refresh."
         )
         st.stop()
 
     # KPI cards
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric(f"News (last {hours}h)", len(news))
+    col1.metric(f"News ({lookback.lower()})", len(news))
     col2.metric("Sources", news["source_name"].nunique())
     col3.metric("Matched games", news["game_id"].notna().sum())
     col4.metric("With keywords", news["keywords"].notna().sum() - (news["keywords"] == "").sum())
@@ -310,7 +386,7 @@ elif page == PAGES[1]:
     kw_series.columns = ["Keyword", "Count"]
     if not kw_series.empty:
         fig = px.bar(kw_series, x="Count", y="Keyword", orientation="h",
-                     title=f"Top keywords (last {hours}h)")
+                     title=f"Top keywords ({lookback.lower()})")
         fig.update_layout(yaxis={"categoryorder": "total ascending"}, height=350)
         st.plotly_chart(fig, use_container_width=True)
     else:
@@ -332,22 +408,52 @@ elif page == PAGES[1]:
         timeline = news_dt.groupby("hour").size().reset_index(name="count")
         if not timeline.empty:
             fig = px.bar(timeline, x="hour", y="count",
-                         title=f"News per hour (last {hours}h)")
+                         title=f"News per hour ({lookback.lower()})")
             fig.update_layout(height=300, xaxis_title="", yaxis_title="items")
             st.plotly_chart(fig, use_container_width=True)
 
     # News list (cherry-picked display) với pagination
     st.divider()
+
+    # Lookback RIÊNG cho news feed (mặc định theo lookback trên, nhưng user có thể chỉnh)
+    col_feed1, col_feed2 = st.columns([1, 3])
+    with col_feed1:
+        feed_lookback = st.selectbox(
+            "Feed lookback",
+            ["1 ngày", "3 ngày", "1 tuần", "1 tháng", "1 năm", "Tất cả"],
+            index=["1 ngày", "3 ngày", "1 tuần", "1 tháng", "1 năm", "Tất cả"].index(lookback),
+            key="news_feed_lookback",
+        )
+    feed_key, feed_hours = lookback_map[feed_lookback]
+
+    # Re-query data riêng cho feed (có thể khác lookback phía trên)
+    feed_news = load_fact_news(feed_hours or 24, feed_key)
+
+    # Áp dụng filter tương tự lên feed
+    feed_filtered = feed_news.copy()
+    if sel_source != "All":
+        feed_filtered = feed_filtered[feed_filtered["source_name"] == sel_source]
+    if sel_keyword != "All":
+        feed_filtered = feed_filtered[feed_filtered["keywords"].str.contains(sel_keyword, na=False)]
+    if search:
+        feed_filtered = feed_filtered[feed_filtered["title"].str.contains(search, case=False, na=False)]
+
     PAGE_SIZE = 15
-    total_items = len(filtered)
+    total_items = len(feed_filtered)
     n_pages = max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE)
 
     st.subheader(f"📋 News feed ({total_items} items)")
 
+    # Reset pagination khi đổi feed_lookback hoặc filter
+    feed_state_key = f"{feed_lookback}|{sel_source}|{sel_keyword}|{search}"
+    if st.session_state.get("news_feed_state") != feed_state_key:
+        st.session_state["news_feed_state"] = feed_state_key
+        st.session_state["news_page"] = 1
+
     # Sort by date (newest first) then by score
     display_cols = ["published_at", "source_name", "title", "summary", "author",
                     "keywords", "score", "url"]
-    display_df = filtered[display_cols].copy() if not filtered.empty else filtered
+    display_df = feed_filtered[display_cols].copy() if not feed_filtered.empty else feed_filtered
     display_df["published_at"] = pd.to_datetime(display_df["published_at"]).dt.strftime("%m-%d %H:%M")
 
     # Pagination state
